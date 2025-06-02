@@ -1,6 +1,8 @@
-# Cat Bot MCP 🐱
+# Anne　Bot 🐱
 
-「アン」という名前の子猫のチャットボットです。ツンデレな性格で、語尾に「にゃん」や「だにゃ」をつけて話します。
+「アン」という名前の子猫のチャットボットです。ツンデレな性格で、語尾に「にゃん」や「だにゃ」をつけて話します。  
+アンはまだ簡単なお話しかできないけど、これからどんどんできることが増えていくから楽しみにしててにゃ。  
+DEMO: [https://anne-bot.vercel.app/](https://anne-bot.vercel.app/)
 
 ## セットアップ
 
@@ -74,22 +76,10 @@ bun run test
 bun run build
 ```
 
-## デプロイ
-
-### Vercel でのデプロイ
-
-最も簡単な方法は [Vercel Platform](https://vercel.com/new) を使用することです：
-
-1. GitHubリポジトリにプッシュ
-2. Vercelでプロジェクトをインポート
-3. 環境変数 `GOOGLE_GENERATIVE_AI_API_KEY` を設定
-4. デプロイ完了！
-
-詳細は [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) を参照してください。
-
 ## 関連リンク
 
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Mastra Documentation](https://mastra.ai/docs)
 - [Google AI Studio](https://ai.google.dev/)
 - [Tailwind CSS](https://tailwindcss.com/)
+- [Vercel Platform](https://vercel.com)
