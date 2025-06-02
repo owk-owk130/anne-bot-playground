@@ -45,19 +45,20 @@ src/
         └── index.ts      # アンのエージェント定義
 ```
 
-## 技術スタック
+## 技術構成
 
-- **フレームワーク**: Next.js 15.3.3 (App Router)
-- **言語**: TypeScript
-- **スタイリング**: Tailwind CSS
-- **AIフレームワーク**: Mastra
-- **LLMプロバイダー**: Google Gemini
-- **パッケージマネージャー**: Bun
-- **ランタイム**: Node.js
+- フレームワーク: Next.js (App Router)
+- 言語: TypeScript
+- スタイリング: Tailwind CSS
+- AIフレームワーク: Mastra
+- LLMプロバイダー: Google Gemini
+- パッケージマネージャー: Bun
+- ユニットテスト: Vitest
+- ランタイム: Node.js
 
 ## 開発
 
-### コードの品質
+### lint / format / test
 
 ```bash
 # Linting
