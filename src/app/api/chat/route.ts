@@ -30,7 +30,10 @@ export const POST = async (req: Request) => {
       const imageDataUrl = imageDataMatch[1];
       try {
         const finalText = await analyzeImageWithWorkflow(imageDataUrl);
-        const stream = await streamCatAgent("assistant", finalText);
+        const stream = await streamCatAgent(
+          "user",
+          `このテキストをそのまま表示してください: ${finalText}`
+        );
         return stream.toDataStreamResponse();
       } catch (workflowError) {
         console.error("Workflow error:", workflowError);
