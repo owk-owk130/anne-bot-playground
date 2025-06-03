@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { mastra } from "~/mastra";
 import { imageAnalysisWorkflow } from "~/mastra/workflows";
 
@@ -13,8 +14,13 @@ const analyzeImageWithWorkflow = async (imageDataUrl: string) => {
 };
 
 const streamCatAgent = async (role: "assistant" | "user", content: string) => {
+  const threadId = randomUUID();
+  const resourceId = "catAgent";
   const catAgent = mastra.getAgent("catAgent");
-  return catAgent.stream([{ role, content }]);
+  return catAgent.stream([{ role, content }], {
+    threadId,
+    resourceId
+  });
 };
 
 export const POST = async (req: Request) => {
