@@ -110,7 +110,7 @@ export default function Chat() {
                 : "bg-pink-500 hover:bg-pink-600"
             } text-white`}
           >
-            {isUploading ? "📷 分析中..." : "📷 画像アップロード"}
+            {isUploading ? "📷 分析中..." : "📷 画像から今の気分を教えて"}
           </button>
           <input
             ref={fileInputRef}
