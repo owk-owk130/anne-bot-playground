@@ -1,22 +1,35 @@
 import { Memory } from "@mastra/memory";
 import { PgVector, PostgresStore } from "@mastra/pg";
 
-const host = process.env.POSTGRES_HOST || "";
-const port = (process.env.POSTGRES_PORT || 0) as number;
-const user = process.env.POSTGRES_USER || "";
-const database = process.env.POSTGRES_DB_NAME || "";
-const password = process.env.POSTGRES_PASSWORD || "";
-const connectionString = `postgresql://${user}:${password}@${host}:${port}/${database}`;
+const host = process.env.SUPABASE_DB_HOST;
+const port = process.env.SUPABASE_DB_PORT
+  ? Number.parseInt(process.env.SUPABASE_DB_PORT, 10)
+  : undefined;
+const user = process.env.SUPABASE_DB_USER;
+const database = process.env.SUPABASE_DB_DB_NAME;
+const password = process.env.SUPABASE_DB_PASSWORD;
+
+const hasPostgresConfig = host && port && user && database && password;
+
+export const storage = hasPostgresConfig
+  ? new PostgresStore({
+      host: host as string,
+      port: port as number,
+      user: user as string,
+      database: database as string,
+      password: password as string
+    })
+  : undefined;
+
+const vector = hasPostgresConfig
+  ? new PgVector({
+      connectionString: `postgresql://${user}:${password}@${host}:${port}/${database}`
+    })
+  : undefined;
 
 export const memory = new Memory({
-  storage: new PostgresStore({
-    host,
-    port,
-    user,
-    database,
-    password
-  }),
-  vector: new PgVector({ connectionString }),
+  storage,
+  vector,
   options: {
     lastMessages: 10,
     semanticRecall: false,
