@@ -18,10 +18,6 @@ export const memory = new Memory({
   }),
   vector: new PgVector({ connectionString }),
   options: {
-    lastMessages: 10,
-    semanticRecall: false,
-    threads: {
-      generateTitle: false
-    }
+    lastMessages: 50
   }
 });

@@ -1,12 +1,30 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { type ChangeEvent, useRef, useState } from "react";
+import { type ChangeEvent, useRef, useState, useEffect } from "react";
 import type { Message } from "ai";
 
 export default function Chat() {
+  const [sessionId, setSessionId] = useState<string>("");
+
+  useEffect(() => {
+    const storedSessionId = localStorage.getItem("chat-session-id");
+    if (storedSessionId) {
+      setSessionId(storedSessionId);
+    } else {
+      const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem("chat-session-id", newSessionId);
+      setSessionId(newSessionId);
+    }
+  }, []);
+
   const { messages, input, handleInputChange, handleSubmit, error, append } =
-    useChat();
+    useChat({
+      api: "/api/chat",
+      headers: {
+        "x-session-id": sessionId
+      }
+    });
   const [isUploading, setIsUploading] = useState(false);
   const [imageMessages, setImageMessages] = useState<{ [key: string]: string }>(
     {}
@@ -24,7 +42,6 @@ export default function Chat() {
       const imageDataUrl = e.target?.result as string;
       const imageId = `img-${Date.now()}`;
 
-      // 画像URLを保存（表示用）
       setImageMessages((prev) => ({
         ...prev,
         [imageId]: imageDataUrl
@@ -51,18 +68,23 @@ export default function Chat() {
     fileInputRef.current?.click();
   };
 
+  const handleNewSession = () => {
+    const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    localStorage.setItem("chat-session-id", newSessionId);
+    setSessionId(newSessionId);
+    window.location.reload();
+  };
+
   const renderMessage = (message: Message) => {
-    // メッセージ内容から画像IDを抽出
     const imageIdMatch = message.content.match(/\[img-\d+\]/);
     const imageId = imageIdMatch ? imageIdMatch[0].slice(1, -1) : null;
 
-    // 画像データ部分を除去したメッセージ内容を取得
     const cleanContent = message.content
-      .replace(/\s*\[img-\d+\]/, "") // 画像IDを除去
+      .replace(/\s*\[img-\d+\]/, "")
       .replace(
         /\n\n画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
         ""
-      ); // base64データを除去
+      );
 
     return (
       <div key={message.id} className="whitespace-pre-wrap mb-4">
@@ -111,6 +133,14 @@ export default function Chat() {
             } text-white`}
           >
             {isUploading ? "📷 分析中..." : "📷 画像から今の気分を教えて"}
+          </button>
+          <button
+            type="button"
+            onClick={handleNewSession}
+            className="px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors text-sm"
+            title="新しい会話を開始"
+          >
+            🔄
           </button>
           <input
             ref={fileInputRef}

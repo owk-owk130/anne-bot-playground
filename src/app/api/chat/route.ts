@@ -1,6 +1,6 @@
-import { randomUUID } from "crypto";
 import { mastra } from "~/mastra";
 import { imageAnalysisWorkflow } from "~/mastra/workflows";
+import type { CoreMessage } from "ai";
 
 const analyzeImageWithWorkflow = async (imageDataUrl: string) => {
   const workflowRun = imageAnalysisWorkflow.createRun();
@@ -13,11 +13,10 @@ const analyzeImageWithWorkflow = async (imageDataUrl: string) => {
     : "画像の分析に失敗しました";
 };
 
-const streamCatAgent = async (role: "assistant" | "user", content: string) => {
-  const threadId = randomUUID();
+const streamCatAgent = async (messages: CoreMessage[], threadId: string) => {
   const resourceId = "catAgent";
   const catAgent = mastra.getAgent("catAgent");
-  return catAgent.stream([{ role, content }], {
+  return catAgent.stream(messages, {
     threadId,
     resourceId
   });
@@ -26,6 +25,9 @@ const streamCatAgent = async (role: "assistant" | "user", content: string) => {
 export const POST = async (req: Request) => {
   try {
     const { messages } = await req.json();
+
+    const sessionId = req.headers.get("x-session-id") || "default-session";
+
     const lastMessage = messages[messages.length - 1];
     const imageDataMatch = lastMessage.content.match(
       /画像データ:\s*(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/
@@ -37,18 +39,26 @@ export const POST = async (req: Request) => {
       try {
         const finalText = await analyzeImageWithWorkflow(imageDataUrl);
         const stream = await streamCatAgent(
-          "user",
-          `このテキストをそのまま表示してください: ${finalText}`
+          [
+            {
+              role: "user",
+              content: `このテキストをそのまま表示してください: ${finalText}`
+            }
+          ],
+          sessionId
         );
         return stream.toDataStreamResponse();
       } catch (workflowError) {
         console.error("Workflow error:", workflowError);
-        const stream = await streamCatAgent("user", "画像の分析に失敗しました");
+        const stream = await streamCatAgent(
+          [{ role: "user", content: "画像の分析に失敗しました" }],
+          sessionId
+        );
         return stream.toDataStreamResponse();
       }
     }
 
-    const stream = await streamCatAgent("user", JSON.stringify(messages));
+    const stream = await streamCatAgent(messages, sessionId);
     return stream.toDataStreamResponse();
   } catch (error) {
     console.error("API Error:", error);
