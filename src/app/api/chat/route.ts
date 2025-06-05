@@ -2,10 +2,13 @@ import { mastra } from "~/mastra";
 import { imageAnalysisWorkflow } from "~/mastra/workflows";
 import type { CoreMessage } from "ai";
 
-const analyzeImageWithWorkflow = async (imageDataUrl: string) => {
+const analyzeImageWithWorkflow = async (
+  imageDataUrl: string,
+  userPrompt?: string
+) => {
   const workflowRun = imageAnalysisWorkflow.createRun();
   const workflowResult = await workflowRun.start({
-    inputData: { imageDataUrl }
+    inputData: { imageDataUrl, userPrompt }
   });
   const catStepResult = workflowResult.steps.catResponse;
   return catStepResult?.status === "success"
@@ -78,13 +81,29 @@ export const POST = async (req: Request) => {
 
     if (hasImageData) {
       const imageDataUrl = imageDataMatch[1];
+      const userText = lastMessage.content
+        .replace(/\s*\[img-\d+\]/, "")
+        .replace(
+          /\n\n画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
+          ""
+        )
+        .trim();
+
       try {
-        const finalText = await analyzeImageWithWorkflow(imageDataUrl);
+        const finalText = await analyzeImageWithWorkflow(
+          imageDataUrl,
+          userText || undefined
+        );
+
         const stream = await streamCatAgent(
           [
             {
               role: "user",
-              content: `このテキストをそのまま表示してください: ${finalText}`
+              content: lastMessage.content
+            },
+            {
+              role: "assistant",
+              content: finalText
             }
           ],
           sessionId
@@ -93,7 +112,16 @@ export const POST = async (req: Request) => {
       } catch (workflowError) {
         console.error("Workflow error:", workflowError);
         const stream = await streamCatAgent(
-          [{ role: "user", content: "画像の分析に失敗しました" }],
+          [
+            {
+              role: "user",
+              content: lastMessage.content
+            },
+            {
+              role: "assistant",
+              content: "画像の分析に失敗しました"
+            }
+          ],
           sessionId
         );
         return stream.toDataStreamResponse();

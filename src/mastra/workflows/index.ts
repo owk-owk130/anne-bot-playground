@@ -17,7 +17,8 @@ const parseAnalysisResult = (text: string) => {
 const analyzeImageStep = createStep({
   id: "analyzeImage",
   inputSchema: z.object({
-    imageDataUrl: z.string()
+    imageDataUrl: z.string(),
+    userPrompt: z.string().optional()
   }),
   outputSchema: z.object({
     analysis: z.object({
@@ -26,11 +27,12 @@ const analyzeImageStep = createStep({
     })
   }),
   execute: async ({ inputData }) => {
+    const prompt = inputData.userPrompt || "この画像を詳細に分析してください。";
     const analysisResult = await imageAnalysisAgent.generate([
       {
         role: "user",
         content: [
-          { type: "text", text: "この画像を詳細に分析してください。" },
+          { type: "text", text: prompt },
           { type: "image", image: inputData.imageDataUrl }
         ]
       }
@@ -68,7 +70,8 @@ const catResponseStep = createStep({
 export const imageAnalysisWorkflow = createWorkflow({
   id: "imageAnalysis",
   inputSchema: z.object({
-    imageDataUrl: z.string()
+    imageDataUrl: z.string(),
+    userPrompt: z.string().optional()
   }),
   outputSchema: z.object({
     text: z.string()

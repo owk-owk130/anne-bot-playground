@@ -25,9 +25,8 @@ export default function Chat() {
     }
   });
   const [isUploading, setIsUploading] = useState(false);
-  const [imageMessages, setImageMessages] = useState<{ [key: string]: string }>(
-    {}
-  );
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imagePrompt, setImagePrompt] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAIProcessing = status === "submitted" || status === "streaming";
@@ -69,33 +68,47 @@ export default function Chat() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    setIsUploading(true);
-
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       const imageDataUrl = e.target?.result as string;
-      const imageId = `img-${Date.now()}`;
-
-      setImageMessages((prev) => ({
-        ...prev,
-        [imageId]: imageDataUrl
-      }));
-
-      try {
-        await append({
-          role: "user",
-          content: `今の表情や気分を教えて！ [${imageId}]\n\n画像データ: ${imageDataUrl}`
-        });
-      } catch (error) {
-        console.error("Error sending message:", error);
-      } finally {
-        setIsUploading(false);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-      }
+      setSelectedImage(imageDataUrl);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleSendImageWithPrompt = async () => {
+    if (!selectedImage) return;
+
+    setIsUploading(true);
+    const imageId = `img-${Date.now()}`;
+
+    try {
+      const content = imagePrompt.trim()
+        ? `${imagePrompt} [${imageId}]\n\n画像データ: ${selectedImage}`
+        : `この画像について教えて [${imageId}]\n\n画像データ: ${selectedImage}`;
+
+      await append({
+        role: "user",
+        content
+      });
+    } catch (error) {
+      console.error("Error sending message:", error);
+    } finally {
+      setIsUploading(false);
+      setSelectedImage(null);
+      setImagePrompt("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleCancelImage = () => {
+    setSelectedImage(null);
+    setImagePrompt("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleImageButtonClick = () => {
@@ -103,11 +116,12 @@ export default function Chat() {
   };
 
   const handleNewSession = () => {
-    const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     localStorage.setItem("chat-session-id", newSessionId);
     setSessionId(newSessionId);
     setMessages([]);
-    setImageMessages({});
+    setSelectedImage(null);
+    setImagePrompt("");
   };
 
   const formatMessageTime = (timestamp: Date | string | undefined) => {
@@ -159,8 +173,11 @@ export default function Chat() {
   };
 
   const renderMessage = (message: Message) => {
-    const imageIdMatch = message.content.match(/\[img-\d+\]/);
-    const imageId = imageIdMatch ? imageIdMatch[0].slice(1, -1) : null;
+    // メッセージから画像データを直接抽出
+    const imageDataMatch = message.content.match(
+      /画像データ:\s*(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/
+    );
+    const imageDataUrl = imageDataMatch ? imageDataMatch[1] : null;
 
     const cleanContent = message.content
       .replace(/\s*\[img-\d+\]/, "")
@@ -189,14 +206,14 @@ export default function Chat() {
             <span>{isUser ? "けんご" : "あん 🐱"}</span>
             <span className="text-xs opacity-60">{timeString}</span>
           </div>
-          {imageId && imageMessages[imageId] && (
+          {imageDataUrl && (
             <img
-              src={imageMessages[imageId]}
+              src={imageDataUrl}
               alt="アップロードされた画像"
               className="max-w-full rounded-lg mb-2"
             />
           )}
-          <div className="whitespace-pre-wrap">{cleanContent}</div>
+          <div className="whitespace-pre-wrap text-left">{cleanContent}</div>
         </div>
       </div>
     );
@@ -268,26 +285,72 @@ export default function Chat() {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* 画像選択時のプレビューエリア */}
+      {selectedImage && (
+        <div className="border-t border-zinc-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 p-4">
+          <div className="mb-3">
+            <img
+              src={selectedImage}
+              alt="選択した画像"
+              className="max-w-full max-h-40 rounded-lg mx-auto"
+            />
+          </div>
+          <div className="mb-3">
+            <input
+              type="text"
+              value={imagePrompt}
+              onChange={(e) => setImagePrompt(e.target.value)}
+              placeholder="この画像について何を聞きたいですか？（例：感情、内容、詳細など）"
+              className="w-full p-3 border border-zinc-300 dark:border-zinc-800 rounded-lg shadow-sm dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              disabled={isUploading}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSendImageWithPrompt}
+              disabled={isUploading}
+              className={`flex-1 px-4 py-2 rounded transition-colors ${
+                isUploading
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-pink-500 hover:bg-pink-600"
+              } text-white text-sm`}
+            >
+              {isUploading ? "送信中..." : "📤 送信"}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelImage}
+              disabled={isUploading}
+              className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded text-sm"
+            >
+              ❌ キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
         <div className="flex gap-2 mb-2">
           <button
             type="button"
             onClick={handleImageButtonClick}
-            disabled={isUploading || isAIProcessing}
+            disabled={isUploading || isAIProcessing || selectedImage !== null}
             className={`px-4 py-2 rounded transition-colors ${
-              isUploading || isAIProcessing
+              isUploading || isAIProcessing || selectedImage !== null
                 ? "bg-gray-400 cursor-not-allowed"
                 : "bg-pink-500 hover:bg-pink-600"
             } text-white text-sm`}
           >
-            {isUploading ? "📷 分析中..." : "📷 画像から今の気分を教えて"}
+            📷 画像をアップロード
           </button>
           <button
             type="button"
             onClick={handleNewSession}
-            disabled={isAIProcessing || isUploading}
+            disabled={isAIProcessing || isUploading || selectedImage !== null}
             className={`px-3 py-2 rounded transition-colors text-sm text-white ${
-              isAIProcessing || isUploading
+              isAIProcessing || isUploading || selectedImage !== null
                 ? "bg-gray-400 cursor-not-allowed"
                 : "bg-gray-500 hover:bg-gray-600"
             }`}
@@ -304,21 +367,23 @@ export default function Chat() {
           />
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <input
-            className={`w-full p-3 border border-zinc-300 dark:border-zinc-800 rounded-lg shadow-sm dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
-              isAIProcessing || isUploading ? "opacity-50" : ""
-            }`}
-            value={input}
-            placeholder={
-              isAIProcessing || isUploading
-                ? "送信中..."
-                : "メッセージを入力..."
-            }
-            onChange={handleInputChange}
-            disabled={isAIProcessing || isUploading}
-          />
-        </form>
+        {!selectedImage && (
+          <form onSubmit={handleSubmit}>
+            <input
+              className={`w-full p-3 border border-zinc-300 dark:border-zinc-800 rounded-lg shadow-sm dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                isAIProcessing || isUploading ? "opacity-50" : ""
+              }`}
+              value={input}
+              placeholder={
+                isAIProcessing || isUploading
+                  ? "送信中..."
+                  : "メッセージを入力..."
+              }
+              onChange={handleInputChange}
+              disabled={isAIProcessing || isUploading}
+            />
+          </form>
+        )}
       </div>
     </div>
   );
