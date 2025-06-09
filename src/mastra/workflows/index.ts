@@ -1,6 +1,6 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
-import { imageAnalysisAgent, catAgent } from "~/mastra/agents";
+import { catAgent, imageAnalysisAgent } from "~/mastra/agents";
 
 const parseAnalysisResult = (text: string) => {
   try {

@@ -1,19 +1,19 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
+import type { Message } from "ai";
 import {
   type ChangeEvent,
+  use,
+  useCallback,
+  useEffect,
   useRef,
   useState,
-  useEffect,
-  useCallback,
-  use
 } from "react";
-import type { Message } from "ai";
-import { useAuth } from "~/lib/auth/AuthProvider";
 import ThreadSidebar, {
-  type ThreadSidebarRef
+  type ThreadSidebarRef,
 } from "~/components/ThreadSidebar";
+import { useAuth } from "~/lib/auth/AuthProvider";
 
 export default function Chat() {
   const { user, loading, signInWithOAuth } = useAuth();
@@ -32,12 +32,12 @@ export default function Chat() {
     append,
     setMessages,
     status,
-    reload
+    reload,
   } = useChat({
     api: "/api/chat",
     headers: {
       "x-session-id": sessionId,
-      "x-user-id": user?.id || ""
+      "x-user-id": user?.id || "",
     },
     onFinish: async () => {
       // メッセージ完了後にスレッド一覧を更新
@@ -65,7 +65,7 @@ export default function Chat() {
               .from("user_threads")
               .update({
                 title: title,
-                updated_at: new Date().toISOString()
+                updated_at: new Date().toISOString(),
               })
               .eq("user_id", user.id)
               .eq("thread_id", sessionId);
@@ -80,7 +80,7 @@ export default function Chat() {
           console.warn("Failed to update thread title:", error);
         }
       }
-    }
+    },
   });
 
   const [isUploading, setIsUploading] = useState(false);
@@ -112,7 +112,7 @@ export default function Chat() {
         if (typeof window !== "undefined") {
           const allKeys = Object.keys(localStorage);
           const sessionKeys = allKeys.filter((key) =>
-            key.startsWith("sessionId_")
+            key.startsWith("sessionId_"),
           );
           console.log("🧹 Cleaning up old session keys:", sessionKeys);
           for (const key of sessionKeys) {
@@ -154,8 +154,8 @@ export default function Chat() {
               `/api/chat?sessionId=${targetSessionId}&userId=${user.id}`,
               {
                 method: "GET",
-                headers: { "Content-Type": "application/json" }
-              }
+                headers: { "Content-Type": "application/json" },
+              },
             );
 
             console.log("📡 Response status:", response.status);
@@ -167,7 +167,7 @@ export default function Chat() {
                 console.log(
                   "✅ Setting",
                   data.messages.length,
-                  "messages to state"
+                  "messages to state",
                 );
                 setMessages(data.messages);
               } else {
@@ -178,7 +178,7 @@ export default function Chat() {
               console.error(
                 "❌ Failed to load messages:",
                 response.status,
-                response.statusText
+                response.statusText,
               );
               const errorData = await response.text();
               console.error("Error response:", errorData);
@@ -220,11 +220,11 @@ export default function Chat() {
           user_id: user.id,
           thread_id: newSessionId,
           title: "New Thread",
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         },
         {
-          onConflict: "user_id,thread_id"
-        }
+          onConflict: "user_id,thread_id",
+        },
       );
 
       if (dbError) {
@@ -286,14 +286,14 @@ export default function Chat() {
 
         // 既存のスレッドの履歴を読み込み
         const response = await fetch(
-          `/api/chat?sessionId=${threadId}&userId=${user.id}`
+          `/api/chat?sessionId=${threadId}&userId=${user.id}`,
         );
         if (response.ok) {
           const data = await response.json();
           console.log(
             "📚 Loaded thread history:",
             data.messages.length,
-            "messages"
+            "messages",
           );
           setMessages(data.messages || []);
         } else {
@@ -311,7 +311,7 @@ export default function Chat() {
         setIsLoadingHistory(false);
       }
     },
-    [user, setMessages]
+    [user, setMessages],
   );
 
   // メッセージが更新されたときにスクロール
@@ -346,7 +346,7 @@ export default function Chat() {
 
       await append({
         role: "user",
-        content: fullMessage
+        content: fullMessage,
       });
 
       setSelectedImage(null);
@@ -362,11 +362,11 @@ export default function Chat() {
   const renderMessage = (m: Message) => {
     const messageContent = m.content.replace(
       /画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,
-      ""
+      "",
     );
 
     const imageMatch = m.content.match(
-      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/
+      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
     );
     const imageData = imageMatch ? imageMatch[0] : null;
 
