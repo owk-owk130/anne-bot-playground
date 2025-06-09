@@ -8,8 +8,6 @@ import {
   useImperativeHandle
 } from "react";
 import { useAuth } from "~/lib/auth/AuthProvider";
-import { useThreads } from "~/hooks/useThreads";
-import { useThreadOperations } from "~/hooks/useThreadOperations";
 import type { Thread } from "~/types/thread";
 
 interface ThreadSidebarProps {
@@ -26,14 +24,127 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
   ({ onNewThread, onThreadSelect, currentThreadId }, ref) => {
     const { user, signOut, signInWithOAuth } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
+    const [threads, setThreads] = useState<Thread[]>([]);
+    const [isLoadingThreads, setIsLoadingThreads] = useState(false);
     const [deletingThreadId, setDeletingThreadId] = useState<string | null>(
       null
     );
 
-    // カスタムフックを使用
-    const { threads, isLoadingThreads, error, fetchThreads, clearThreads } =
-      useThreads();
-    const { deleteThread: deleteThreadOperation } = useThreadOperations();
+    // スレッド一覧を取得する関数
+    const fetchThreads = useCallback(async () => {
+      if (!user) {
+        setThreads([]);
+        return;
+      }
+
+      setIsLoadingThreads(true);
+      try {
+        console.log("🔍 Fetching threads for user:", user.id);
+
+        // クライアントサイドでSupabaseから直接取得
+        const { createClientComponentClient } = await import(
+          "~/lib/supabase/client"
+        );
+        const supabase = createClientComponentClient();
+
+        const { data: userThreads, error: dbError } = await supabase
+          .from("user_threads")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("updated_at", { ascending: false });
+
+        if (dbError) {
+          console.error("Database error:", dbError);
+          setThreads([]);
+          return;
+        }
+
+        // スレッド詳細情報を準備（Mastraからメッセージ情報を取得）
+        interface UserThread {
+          id: string;
+          user_id: string;
+          thread_id: string;
+          title: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+
+        const threadsWithDetails = await Promise.all(
+          (userThreads || []).map(async (userThread: UserThread) => {
+            let messageCount = 0;
+            let lastMessage = undefined;
+
+            try {
+              // Mastraからメッセージを取得してメッセージ数を計算
+              const response = await fetch(
+                `/api/chat?sessionId=${userThread.thread_id}&userId=${user.id}`,
+                {
+                  method: "GET",
+                  headers: { "Content-Type": "application/json" }
+                }
+              );
+
+              if (response.ok) {
+                const data = await response.json();
+                console.log(
+                  `Thread ${userThread.thread_id} messages:`,
+                  data.messages
+                );
+                if (Array.isArray(data.messages) && data.messages.length > 0) {
+                  messageCount = data.messages.length;
+                  // 最後のメッセージを取得（ユーザーまたはアシスタントの最新メッセージ）
+                  const lastMsg = data.messages[data.messages.length - 1];
+                  if (lastMsg) {
+                    const content =
+                      typeof lastMsg.content === "string"
+                        ? lastMsg.content
+                        : JSON.stringify(lastMsg.content);
+                    lastMessage =
+                      content.length > 50
+                        ? `${content.substring(0, 50)}...`
+                        : content;
+                  }
+                } else {
+                  console.log(
+                    `No messages found for thread ${userThread.thread_id}`
+                  );
+                }
+              } else {
+                console.warn(
+                  `Failed to fetch messages for thread ${userThread.thread_id}, status:`,
+                  response.status
+                );
+              }
+            } catch (error) {
+              console.warn(
+                `Failed to fetch messages for thread ${userThread.thread_id}:`,
+                error
+              );
+            }
+
+            return {
+              id: userThread.thread_id,
+              title: userThread.title || "New Thread",
+              lastMessage: lastMessage || "メッセージがありません",
+              createdAt: userThread.created_at,
+              updatedAt: userThread.updated_at,
+              messageCount: messageCount
+            };
+          })
+        );
+
+        setThreads(threadsWithDetails);
+        console.log(
+          "✅ Successfully fetched threads:",
+          threadsWithDetails.length
+        );
+      } catch (error) {
+        console.error("Error fetching threads:", error);
+        setThreads([]);
+      } finally {
+        setIsLoadingThreads(false);
+      }
+    }, [user]);
 
     // ユーザーがログインしたときにスレッド一覧を取得
     useEffect(() => {
@@ -58,7 +169,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
     const handleLogout = async () => {
       try {
         await signOut();
-        clearThreads(); // ログアウト時にスレッド一覧をクリア
+        setThreads([]); // ログアウト時にスレッド一覧をクリア
         onNewThread(); // ログアウト後に新しいセッションを開始
       } catch (error) {
         console.error("Logout error:", error);
@@ -78,17 +189,54 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
 
         setDeletingThreadId(threadId);
         try {
-          const success = await deleteThreadOperation(threadId);
+          console.log("🗑️ Deleting thread:", threadId);
 
-          if (success) {
-            // 現在のスレッドが削除されたスレッドの場合、新しいスレッドに切り替え
-            if (currentThreadId === threadId) {
-              onNewThread();
-            }
+          // Supabaseからスレッドを削除
+          const { createClientComponentClient } = await import(
+            "~/lib/supabase/client"
+          );
+          const supabase = createClientComponentClient();
 
-            // スレッド一覧を更新
-            await fetchThreads();
+          const { error: dbError } = await supabase
+            .from("user_threads")
+            .delete()
+            .eq("user_id", user.id)
+            .eq("thread_id", threadId);
+
+          if (dbError) {
+            console.error("Failed to delete thread from database:", dbError);
+            alert("スレッドの削除に失敗しました。");
+            return;
           }
+
+          // Mastraメモリからも削除を試行
+          try {
+            const response = await fetch(
+              `/api/chat?sessionId=${threadId}&userId=${user.id}`,
+              {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" }
+              }
+            );
+
+            if (!response.ok) {
+              console.warn(
+                "Failed to delete thread from Mastra memory, but database deletion succeeded"
+              );
+            }
+          } catch (error) {
+            console.warn("Error deleting from Mastra memory:", error);
+          }
+
+          // 現在のスレッドが削除されたスレッドの場合、新しいスレッドに切り替え
+          if (currentThreadId === threadId) {
+            onNewThread();
+          }
+
+          // スレッド一覧を更新
+          await fetchThreads();
+
+          console.log("✅ Successfully deleted thread:", threadId);
         } catch (error) {
           console.error("Error deleting thread:", error);
           alert("スレッドの削除中にエラーが発生しました。");
@@ -96,7 +244,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
           setDeletingThreadId(null);
         }
       },
-      [user, currentThreadId, onNewThread, fetchThreads, deleteThreadOperation]
+      [user, currentThreadId, onNewThread, fetchThreads]
     );
 
     return (
@@ -115,7 +263,6 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
             viewBox="0 0 24 24"
             aria-hidden="true"
           >
-            <title>メニューアイコン</title>
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -155,7 +302,6 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                     viewBox="0 0 24 24"
                     aria-hidden="true"
                   >
-                    <title>閉じるアイコン</title>
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -202,7 +348,6 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                         stroke="currentColor"
                         viewBox="0 0 24 24"
                       >
-                        <title>更新アイコン</title>
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -222,7 +367,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                         </p>
                       </div>
                     ) : threads.length > 0 ? (
-                      threads.map((thread: Thread) => (
+                      threads.map((thread) => (
                         <div
                           key={thread.id}
                           className={`relative group w-full p-3 rounded-lg transition-colors ${
@@ -284,7 +429,6 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                                 viewBox="0 0 24 24"
                                 aria-hidden="true"
                               >
-                                <title>削除アイコン</title>
                                 <path
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
@@ -367,7 +511,6 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                         viewBox="0 0 24 24"
                         aria-hidden="true"
                       >
-                        <title>Googleアイコン</title>
                         <path
                           fill="currentColor"
                           d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
