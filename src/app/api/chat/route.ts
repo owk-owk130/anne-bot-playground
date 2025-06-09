@@ -36,22 +36,37 @@ export const GET = async (req: Request) => {
     if (!agentMemory) {
       return new Response(JSON.stringify({ messages: [] }), {
         status: 200,
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json"
+        }
       });
     }
 
-    const messageHistory = await agentMemory.rememberMessages({
-      threadId: sessionId,
-      resourceId: "catAgent"
-    });
+    try {
+      const messageHistory = await agentMemory.rememberMessages({
+        threadId: sessionId,
+        resourceId: "catAgent"
+      });
 
-    return new Response(
-      JSON.stringify({ messages: messageHistory.uiMessages }),
-      {
+      return new Response(
+        JSON.stringify({ messages: messageHistory.uiMessages }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      );
+    } catch (memoryError) {
+      // スレッドが存在しない場合やメモリエラーの場合は空の配列を返す
+      console.log("No messages found for session:", sessionId);
+      return new Response(JSON.stringify({ messages: [] }), {
         status: 200,
-        headers: { "Content-Type": "application/json" }
-      }
-    );
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+    }
   } catch (error) {
     console.error("GET API Error:", error);
     return new Response(

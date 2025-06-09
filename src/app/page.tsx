@@ -1,10 +1,20 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { type ChangeEvent, useRef, useState, useEffect } from "react";
+import {
+  type ChangeEvent,
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  use
+} from "react";
 import type { Message } from "ai";
+import { useAuth } from "~/lib/auth/AuthProvider";
+import ThreadSidebar from "~/components/ThreadSidebar";
 
 export default function Chat() {
+  const { user, loading } = useAuth();
   const [sessionId, setSessionId] = useState<string>("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -24,6 +34,7 @@ export default function Chat() {
       "x-session-id": sessionId
     }
   });
+
   const [isUploading, setIsUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imagePrompt, setImagePrompt] = useState("");
@@ -32,38 +43,88 @@ export default function Chat() {
   const isAIProcessing = status === "submitted" || status === "streaming";
 
   useEffect(() => {
-    const initializeChat = async () => {
-      let currentSessionId = localStorage.getItem("chat-session-id");
-      if (!currentSessionId) {
-        currentSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-        localStorage.setItem("chat-session-id", currentSessionId);
-      }
-      setSessionId(currentSessionId);
+    console.log("User state changed:", user);
+  }, [user]);
 
-      try {
-        const response = await fetch(`/api/chat?sessionId=${currentSessionId}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.messages && data.messages.length > 0) {
-            setMessages(data.messages);
-          }
+  useEffect(() => {
+    const initializeApp = async () => {
+      if (loading) return;
+
+      if (!sessionId && typeof window !== "undefined") {
+        setIsLoadingHistory(true);
+
+        let newSessionId = localStorage.getItem("sessionId");
+
+        if (!newSessionId) {
+          newSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+          localStorage.setItem("sessionId", newSessionId);
         }
-      } catch (error) {
-        console.error("Error loading message history:", error);
-      } finally {
+
+        setSessionId(newSessionId);
+
+        // 前回のメッセージを復元
+        try {
+          console.log("Fetching messages for session:", newSessionId);
+          const response = await fetch(`/api/chat?sessionId=${newSessionId}`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" }
+          });
+
+          console.log("Response status:", response.status);
+
+          if (response.ok) {
+            const data = await response.json();
+            console.log("Loaded messages:", data);
+            if (Array.isArray(data.messages) && data.messages.length > 0) {
+              setMessages(data.messages);
+            } else {
+              setMessages([]);
+            }
+          } else {
+            console.error(
+              "Response not ok:",
+              response.status,
+              response.statusText
+            );
+            const errorData = await response.text();
+            console.error("Error response:", errorData);
+            setMessages([]);
+          }
+        } catch (error) {
+          console.error("Error loading messages:", error);
+          setMessages([]);
+        }
+
         setIsLoadingHistory(false);
       }
     };
 
-    initializeChat();
+    initializeApp();
+  }, [loading, sessionId, setMessages]);
+
+  // 新しい会話を開始
+  const handleNewThread = useCallback(() => {
+    const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    // 全ユーザー共通でlocalStorageに新しいセッションIDを保存
+    if (typeof window !== "undefined") {
+      localStorage.setItem("sessionId", newSessionId);
+    }
+
+    setSessionId(newSessionId);
+    setMessages([]);
+    setSelectedImage(null);
+    setImagePrompt("");
   }, [setMessages]);
 
+  // メッセージが更新されたときにスクロール
   useEffect(() => {
     if (messagesEndRef.current && messages.length > 0) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   });
 
+  // 画像アップロード処理
   const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -76,314 +137,233 @@ export default function Chat() {
     reader.readAsDataURL(file);
   };
 
-  const handleSendImageWithPrompt = async () => {
-    if (!selectedImage) return;
+  // 画像分析処理
+  const handleImageAnalysis = async () => {
+    if (!selectedImage || isAIProcessing) return;
 
     setIsUploading(true);
-    const imageId = `img-${Date.now()}`;
 
     try {
-      const content = imagePrompt.trim()
-        ? `${imagePrompt} [${imageId}]\n\n画像データ: ${selectedImage}`
-        : `この画像について教えて [${imageId}]\n\n画像データ: ${selectedImage}`;
+      const imageMessage = `画像を分析してください。${imagePrompt || "この画像について教えてください。"}`;
+      const fullMessage = `${imageMessage}\n\n画像データ: ${selectedImage}`;
 
       await append({
         role: "user",
-        content
+        content: fullMessage
       });
-    } catch (error) {
-      console.error("Error sending message:", error);
-    } finally {
-      setIsUploading(false);
+
       setSelectedImage(null);
       setImagePrompt("");
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+    } catch (error) {
+      console.error("Error analyzing image:", error);
+    } finally {
+      setIsUploading(false);
     }
   };
 
-  const handleCancelImage = () => {
-    setSelectedImage(null);
-    setImagePrompt("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleImageButtonClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleNewSession = () => {
-    const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    localStorage.setItem("chat-session-id", newSessionId);
-    setSessionId(newSessionId);
-    setMessages([]);
-    setSelectedImage(null);
-    setImagePrompt("");
-  };
-
-  const formatMessageTime = (timestamp: Date | string | undefined) => {
-    const messageTime = timestamp ? new Date(timestamp) : new Date();
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const messageDate = new Date(
-      messageTime.getFullYear(),
-      messageTime.getMonth(),
-      messageTime.getDate()
+  // メッセージレンダリング
+  const renderMessage = (m: Message) => {
+    const messageContent = m.content.replace(
+      /画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,
+      ""
     );
 
-    const diffDays = Math.floor(
-      (today.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24)
+    const imageMatch = m.content.match(
+      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/
     );
-
-    if (diffDays === 0) {
-      // 今日
-      return messageTime.toLocaleString("ja-JP", {
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-    }
-
-    if (diffDays === 1) {
-      // 昨日
-      return `昨日 ${messageTime.toLocaleString("ja-JP", {
-        hour: "2-digit",
-        minute: "2-digit"
-      })}`;
-    }
-
-    if (diffDays < 7) {
-      // 1週間以内
-      return messageTime.toLocaleString("ja-JP", {
-        weekday: "short",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-    }
-
-    // それ以前
-    return messageTime.toLocaleString("ja-JP", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-  };
-
-  const renderMessage = (message: Message) => {
-    // メッセージから画像データを直接抽出
-    const imageDataMatch = message.content.match(
-      /画像データ:\s*(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/
-    );
-    const imageDataUrl = imageDataMatch ? imageDataMatch[1] : null;
-
-    const cleanContent = message.content
-      .replace(/\s*\[img-\d+\]/, "")
-      .replace(
-        /\n\n画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
-        ""
-      );
-
-    const isUser = message.role === "user";
-
-    const timeString = formatMessageTime(message.createdAt);
+    const imageData = imageMatch ? imageMatch[0] : null;
 
     return (
-      <div
-        key={message.id}
-        className={`mb-4 ${isUser ? "text-right" : "text-left"}`}
-      >
+      <div key={m.id} className="mb-4">
         <div
-          className={`inline-block max-w-[80%] p-3 rounded-lg ${
-            isUser
-              ? "bg-pink-500 text-white rounded-br-none"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-none"
+          className={`p-3 rounded-lg max-w-xs sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl ${
+            m.role === "user"
+              ? "bg-pink-500 text-white ml-auto"
+              : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
           }`}
         >
-          <div className="text-xs opacity-70 mb-1 flex justify-between items-center">
-            <span>{isUser ? "けんご" : "あん 🐱"}</span>
-            <span className="text-xs opacity-60">{timeString}</span>
-          </div>
-          {imageDataUrl && (
-            <img
-              src={imageDataUrl}
-              alt="アップロードされた画像"
-              className="max-w-full rounded-lg mb-2"
-            />
+          {imageData && (
+            <div className="mb-2">
+              <img
+                src={imageData}
+                alt="Uploaded"
+                className="max-w-full h-auto rounded"
+                style={{ maxHeight: "200px" }}
+              />
+            </div>
           )}
-          <div className="whitespace-pre-wrap text-left">{cleanContent}</div>
+          <div
+            className={`whitespace-pre-wrap ${
+              m.role === "assistant" ? "text-gray-800 dark:text-gray-200" : ""
+            }`}
+          >
+            {messageContent.trim()}
+          </div>
         </div>
       </div>
     );
+  };
+
+  // フォーム送信処理
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    try {
+      handleSubmit(e);
+    } catch (error) {
+      console.error("Error in message submission:", error);
+      handleSubmit(e);
+    }
   };
 
   return (
-    <div className="flex flex-col h-screen w-full max-w-md mx-auto">
-      <div className="flex-1 overflow-y-auto p-4 pb-6">
-        {error && (
-          <div className="mb-4 p-2 bg-red-100 border border-red-400 text-red-700 rounded">
-            エラー: {error.message}
-          </div>
-        )}
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      {/* サイドバー */}
+      <ThreadSidebar onNewThread={handleNewThread} />
 
-        {isLoadingHistory ? (
-          <div className="whitespace-pre-wrap mb-4 text-center">
-            <div className="mt-1 text-gray-600 flex items-center justify-center">
-              <span className="animate-bounce mr-2">🐱</span>
-              <span className="animate-pulse">チャット履歴を読み込み中...</span>
-              <span className="animate-bounce ml-2">💭</span>
+      {/* メインチャットエリア */}
+      <div className="flex-1 flex flex-col md:ml-80">
+        <div className="flex-1 overflow-y-auto p-4 pb-6">
+          {error && (
+            <div className="mb-4 p-2 bg-red-100 border border-red-400 text-red-700 rounded">
+              エラー: {error.message}
             </div>
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="whitespace-pre-wrap mb-4 text-center">
-            <div className="mt-1 text-gray-500">
-              <span className="text-2xl mb-2 block">🐱</span>
-              <p>あんです！何か話しかけてくださいにゃん♪</p>
-              <p className="text-sm mt-2">
-                画像をアップロードして気分を聞くこともできますよ🎀
-              </p>
-            </div>
-          </div>
-        ) : (
-          messages.map((m) => renderMessage(m))
-        )}
+          )}
 
-        {isUploading && (
-          <div className="mb-4 text-left">
-            <div className="inline-block max-w-[80%] p-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-none">
-              <div className="text-xs opacity-70 mb-1 flex justify-between items-center">
-                <span>あん 🐱</span>
-                <span className="text-xs opacity-60">
-                  {formatMessageTime(new Date())}
+          {isLoadingHistory ? (
+            <div className="whitespace-pre-wrap mb-4 text-center">
+              <div className="mt-1 text-gray-600 flex items-center justify-center">
+                <span className="animate-bounce mr-2">🐱</span>
+                <span className="animate-pulse">
+                  チャット履歴を読み込み中...
                 </span>
-              </div>
-              <div className="flex items-center">
-                <span className="animate-spin mr-2">📷</span>
-                <span className="animate-pulse">画像を分析しています...</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isAIProcessing && !isUploading && (
-          <div className="mb-4 text-left">
-            <div className="inline-block max-w-[80%] p-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-none">
-              <div className="text-xs opacity-70 mb-1 flex justify-between items-center">
-                <span>あん 🐱</span>
-                <span className="text-xs opacity-60">
-                  {formatMessageTime(new Date())}
-                </span>
-              </div>
-              <div className="flex items-center">
-                <span className="animate-pulse">返事を考えています...</span>
                 <span className="animate-bounce ml-2">💭</span>
               </div>
             </div>
+          ) : messages.length === 0 ? (
+            <div className="whitespace-pre-wrap mb-4 text-center">
+              <div className="mt-1 text-gray-500">
+                <span className="text-2xl mb-2 block">🐱</span>
+                <p>あんです！何か話しかけてくださいにゃん♪</p>
+                <p className="text-sm mt-2">
+                  画像をアップロードして気分を聞くこともできますよ🎀
+                </p>
+              </div>
+            </div>
+          ) : (
+            messages.map((m) => renderMessage(m))
+          )}
+
+          {isUploading && (
+            <div className="mb-4 text-center text-gray-600 dark:text-gray-400">
+              <span className="animate-pulse">画像を分析中...</span>
+            </div>
+          )}
+
+          {isAIProcessing && (
+            <div className="mb-4">
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 rounded-lg max-w-xs sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl">
+                <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-400">
+                  <div className="flex space-x-1">
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: "0ms" }}
+                    />
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: "150ms" }}
+                    />
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: "300ms" }}
+                    />
+                  </div>
+                  <span>考え中...</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* 画像プレビューエリア */}
+        {selectedImage && (
+          <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-start space-x-4">
+              <img
+                src={selectedImage}
+                alt="Preview"
+                className="w-20 h-20 object-cover rounded"
+              />
+              <div className="flex-1">
+                <input
+                  type="text"
+                  placeholder="画像について質問や説明を入力..."
+                  value={imagePrompt}
+                  onChange={(e) => setImagePrompt(e.target.value)}
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+                <div className="flex space-x-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleImageAnalysis}
+                    disabled={isAIProcessing}
+                    className="px-4 py-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-400 text-white rounded-lg"
+                  >
+                    分析開始
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedImage(null)}
+                    className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
-      </div>
 
-      {/* 画像選択時のプレビューエリア */}
-      {selectedImage && (
-        <div className="border-t border-zinc-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 p-4">
-          <div className="mb-3">
-            <img
-              src={selectedImage}
-              alt="選択した画像"
-              className="max-w-full max-h-40 rounded-lg mx-auto"
-            />
-          </div>
-          <div className="mb-3">
+        {/* 入力エリア */}
+        <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+          <form onSubmit={handleFormSubmit} className="flex space-x-2">
             <input
-              type="text"
-              value={imagePrompt}
-              onChange={(e) => setImagePrompt(e.target.value)}
-              placeholder="この画像について何を聞きたいですか？（例：感情、内容、詳細など）"
-              className="w-full p-3 border border-zinc-300 dark:border-zinc-800 rounded-lg shadow-sm dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-              disabled={isUploading}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              ref={fileInputRef}
+              className="hidden"
             />
-          </div>
-          <div className="flex gap-2">
+
             <button
               type="button"
-              onClick={handleSendImageWithPrompt}
-              disabled={isUploading}
-              className={`flex-1 px-4 py-2 rounded transition-colors ${
-                isUploading
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-pink-500 hover:bg-pink-600"
-              } text-white text-sm`}
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg"
+              title="画像をアップロード"
             >
-              {isUploading ? "送信中..." : "📤 送信"}
+              📷
             </button>
-            <button
-              type="button"
-              onClick={handleCancelImage}
-              disabled={isUploading}
-              className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded text-sm"
-            >
-              ❌ キャンセル
-            </button>
-          </div>
-        </div>
-      )}
 
-      <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-        <div className="flex gap-2 mb-2">
-          <button
-            type="button"
-            onClick={handleImageButtonClick}
-            disabled={isUploading || isAIProcessing || selectedImage !== null}
-            className={`px-4 py-2 rounded transition-colors ${
-              isUploading || isAIProcessing || selectedImage !== null
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-pink-500 hover:bg-pink-600"
-            } text-white text-sm`}
-          >
-            📷 画像をアップロード
-          </button>
-          <button
-            type="button"
-            onClick={handleNewSession}
-            disabled={isAIProcessing || isUploading || selectedImage !== null}
-            className={`px-3 py-2 rounded transition-colors text-sm text-white ${
-              isAIProcessing || isUploading || selectedImage !== null
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-gray-500 hover:bg-gray-600"
-            }`}
-            title="新しい会話を開始"
-          >
-            🔄
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            className="hidden"
-          />
-        </div>
-
-        {!selectedImage && (
-          <form onSubmit={handleSubmit}>
             <input
-              className={`w-full p-3 border border-zinc-300 dark:border-zinc-800 rounded-lg shadow-sm dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
-                isAIProcessing || isUploading ? "opacity-50" : ""
-              }`}
               value={input}
-              placeholder={
-                isAIProcessing || isUploading
-                  ? "送信中..."
-                  : "メッセージを入力..."
-              }
+              placeholder="メッセージを入力..."
               onChange={handleInputChange}
-              disabled={isAIProcessing || isUploading}
+              disabled={isAIProcessing || selectedImage !== null}
+              className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:bg-gray-100 dark:disabled:bg-gray-800"
             />
+            <button
+              type="submit"
+              disabled={
+                isAIProcessing || !input.trim() || selectedImage !== null
+              }
+              className="px-4 py-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-400 text-white rounded-lg"
+            >
+              送信
+            </button>
           </form>
-        )}
+        </div>
       </div>
     </div>
   );
