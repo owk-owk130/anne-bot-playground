@@ -8,6 +8,6 @@ export const mastra = new Mastra({
   workflows: { imageAnalysisWorkflow },
   logger: new ConsoleLogger({
     name: "Mastra",
-    level: "info"
-  })
+    level: "info",
+  }),
 });

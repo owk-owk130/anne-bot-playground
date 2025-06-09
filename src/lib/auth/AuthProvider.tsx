@@ -17,7 +17,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signOut: async () => {},
   signInWithOAuth: async () => {},
-  supabase: {} as ReturnType<typeof createClientComponentClient>
+  supabase: {} as ReturnType<typeof createClientComponentClient>,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const getUser = async () => {
       const {
-        data: { user }
+        data: { user },
       } = await supabase.auth.getUser();
       setUser(user);
       setLoading(false);
@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getUser();
 
     const {
-      data: { subscription }
+      data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
@@ -50,10 +50,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // Supabaseからログアウト
       await supabase.auth.signOut();
-      
+
       // 注意: ログアウト時にセッションIDは削除しない
       // これにより、再ログイン時に会話履歴が保持される
-      console.log("Logged out successfully, keeping session data for potential re-login");
+      console.log(
+        "Logged out successfully, keeping session data for potential re-login",
+      );
     } catch (error) {
       console.error("Sign out error:", error);
       throw error;
@@ -68,9 +70,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           redirectTo: `${window.location.origin}/auth/callback`,
           queryParams: {
             access_type: "offline",
-            prompt: "consent"
-          }
-        }
+            prompt: "consent",
+          },
+        },
       });
 
       if (error) {

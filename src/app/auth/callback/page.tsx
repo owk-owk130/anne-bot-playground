@@ -13,7 +13,7 @@ export default function AuthCallback() {
       try {
         // URLフラグメント（#以降）から認証情報を取得（Implicit Flow用）
         const hashParams = new URLSearchParams(
-          window.location.hash.substring(1)
+          window.location.hash.substring(1),
         );
         const accessToken = hashParams.get("access_token");
         const refreshToken = hashParams.get("refresh_token");
@@ -24,7 +24,7 @@ export default function AuthCallback() {
           // Implicit Flowの場合、手動でセッションを設定
           const { data, error } = await supabase.auth.setSession({
             access_token: accessToken,
-            refresh_token: refreshToken
+            refresh_token: refreshToken,
           });
 
           if (error) {
@@ -46,7 +46,7 @@ export default function AuthCallback() {
         if (error) {
           console.error("OAuth error in URL:", error);
           router.push(
-            `/auth/auth-code-error?error=${encodeURIComponent(error)}`
+            `/auth/auth-code-error?error=${encodeURIComponent(error)}`,
           );
           return;
         }

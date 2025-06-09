@@ -7,7 +7,7 @@ import {
   useState,
   useEffect,
   useCallback,
-  use
+  use,
 } from "react";
 import type { Message } from "ai";
 import { useAuth } from "~/lib/auth/AuthProvider";
@@ -28,13 +28,13 @@ export default function Chat() {
     error,
     append,
     setMessages,
-    status
+    status,
   } = useChat({
     api: "/api/chat",
     headers: {
       "x-session-id": sessionId,
-      "x-user-id": user?.id || ""
-    }
+      "x-user-id": user?.id || "",
+    },
   });
 
   const [isUploading, setIsUploading] = useState(false);
@@ -66,7 +66,7 @@ export default function Chat() {
         if (typeof window !== "undefined") {
           const allKeys = Object.keys(localStorage);
           const sessionKeys = allKeys.filter((key) =>
-            key.startsWith("sessionId_")
+            key.startsWith("sessionId_"),
           );
           console.log("🧹 Cleaning up old session keys:", sessionKeys);
           for (const key of sessionKeys) {
@@ -95,7 +95,7 @@ export default function Chat() {
           localStorage.setItem(userSessionKey, targetSessionId);
           console.log(
             "🔄 Updated session ID to fixed format:",
-            targetSessionId
+            targetSessionId,
           );
         } else {
           console.log("♻️ Using existing session ID:", targetSessionId);
@@ -112,8 +112,8 @@ export default function Chat() {
               `/api/chat?sessionId=${targetSessionId}&userId=${user.id}`,
               {
                 method: "GET",
-                headers: { "Content-Type": "application/json" }
-              }
+                headers: { "Content-Type": "application/json" },
+              },
             );
 
             console.log("📡 Response status:", response.status);
@@ -125,7 +125,7 @@ export default function Chat() {
                 console.log(
                   "✅ Setting",
                   data.messages.length,
-                  "messages to state"
+                  "messages to state",
                 );
                 setMessages(data.messages);
               } else {
@@ -136,7 +136,7 @@ export default function Chat() {
               console.error(
                 "❌ Failed to load messages:",
                 response.status,
-                response.statusText
+                response.statusText,
               );
               const errorData = await response.text();
               console.error("Error response:", errorData);
@@ -209,7 +209,7 @@ export default function Chat() {
 
       await append({
         role: "user",
-        content: fullMessage
+        content: fullMessage,
       });
 
       setSelectedImage(null);
@@ -225,11 +225,11 @@ export default function Chat() {
   const renderMessage = (m: Message) => {
     const messageContent = m.content.replace(
       /画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,
-      ""
+      "",
     );
 
     const imageMatch = m.content.match(
-      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/
+      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
     );
     const imageData = imageMatch ? imageMatch[0] : null;
 

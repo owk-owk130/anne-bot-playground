@@ -23,8 +23,8 @@ const getGlobalSupabaseClient = () => {
       auth: {
         storageKey: "anne-bot-auth",
         autoRefreshToken: false, // サーバーサイドではリフレッシュ無効
-        persistSession: false // サーバーサイドでは永続化無効
-      }
+        persistSession: false, // サーバーサイドでは永続化無効
+      },
     });
   }
 
@@ -35,8 +35,8 @@ const getGlobalSupabaseClient = () => {
         storageKey: "anne-bot-auth",
         autoRefreshToken: true,
         persistSession: true,
-        debug: false
-      }
+        debug: false,
+      },
     });
 
     if (process.env.NODE_ENV === "development") {

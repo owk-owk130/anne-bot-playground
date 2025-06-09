@@ -16,13 +16,7 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-family:
-      "Geist",
-      system-ui,
-      -apple-system,
-      sans-serif;
-    transition:
-      background-color 0.2s ease,
-      color 0.2s ease;
+    font-family: "Geist", system-ui, -apple-system, sans-serif;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 }

@@ -18,13 +18,13 @@ const analyzeImageStep = createStep({
   id: "analyzeImage",
   inputSchema: z.object({
     imageDataUrl: z.string(),
-    userPrompt: z.string().optional()
+    userPrompt: z.string().optional(),
   }),
   outputSchema: z.object({
     analysis: z.object({
       isCat: z.boolean(),
-      analysis: z.string()
-    })
+      analysis: z.string(),
+    }),
   }),
   execute: async ({ inputData }) => {
     const prompt = inputData.userPrompt || "この画像を詳細に分析してください。";
@@ -33,14 +33,14 @@ const analyzeImageStep = createStep({
         role: "user",
         content: [
           { type: "text", text: prompt },
-          { type: "image", image: inputData.imageDataUrl }
-        ]
-      }
+          { type: "image", image: inputData.imageDataUrl },
+        ],
+      },
     ]);
     return {
-      analysis: parseAnalysisResult(analysisResult.text)
+      analysis: parseAnalysisResult(analysisResult.text),
     };
-  }
+  },
 });
 
 const catResponseStep = createStep({
@@ -48,34 +48,34 @@ const catResponseStep = createStep({
   inputSchema: z.object({
     analysis: z.object({
       isCat: z.boolean(),
-      analysis: z.string()
-    })
+      analysis: z.string(),
+    }),
   }),
   outputSchema: z.object({
-    text: z.string()
+    text: z.string(),
   }),
   execute: async ({ inputData }) => {
     const catResult = await catAgent.generate([
       {
         role: "user",
-        content: `画像分析結果: ${JSON.stringify(inputData.analysis)}`
-      }
+        content: `画像分析結果: ${JSON.stringify(inputData.analysis)}`,
+      },
     ]);
     return {
-      text: catResult.text
+      text: catResult.text,
     };
-  }
+  },
 });
 
 export const imageAnalysisWorkflow = createWorkflow({
   id: "imageAnalysis",
   inputSchema: z.object({
     imageDataUrl: z.string(),
-    userPrompt: z.string().optional()
+    userPrompt: z.string().optional(),
   }),
   outputSchema: z.object({
-    text: z.string()
-  })
+    text: z.string(),
+  }),
 })
   .then(analyzeImageStep)
   .then(catResponseStep)
