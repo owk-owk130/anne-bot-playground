@@ -48,7 +48,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
+      // Supabaseからログアウト
       await supabase.auth.signOut();
+      
+      // 注意: ログアウト時にセッションIDは削除しない
+      // これにより、再ログイン時に会話履歴が保持される
+      console.log("Logged out successfully, keeping session data for potential re-login");
     } catch (error) {
       console.error("Sign out error:", error);
       throw error;

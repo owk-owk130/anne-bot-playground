@@ -16,8 +16,13 @@ const analyzeImageWithWorkflow = async (
     : "画像の分析に失敗しました";
 };
 
-const streamCatAgent = async (messages: CoreMessage[], threadId: string) => {
-  const resourceId = "catAgent";
+const streamCatAgent = async (
+  messages: CoreMessage[],
+  threadId: string,
+  userId?: string
+) => {
+  // ユーザーIDがある場合は、ユーザー固有のresourceIdを作成
+  const resourceId = userId ? `catAgent:${userId}` : "catAgent";
   const catAgent = mastra.getAgent("catAgent");
   return catAgent.stream(messages, {
     threadId,
@@ -29,6 +34,9 @@ export const GET = async (req: Request) => {
   try {
     const url = new URL(req.url);
     const sessionId = url.searchParams.get("sessionId") || "default-session";
+    const userId = url.searchParams.get("userId"); // クライアントからuserIdを受け取る
+
+    console.log("GET /api/chat - sessionId:", sessionId, "userId:", userId);
 
     const catAgent = mastra.getAgent("catAgent");
     const agentMemory = catAgent.getMemory();
@@ -43,10 +51,20 @@ export const GET = async (req: Request) => {
     }
 
     try {
+      // ユーザー固有のresourceIdを使用
+      const resourceId = userId ? `catAgent:${userId}` : "catAgent";
+      console.log("Using resourceId:", resourceId, "threadId:", sessionId);
+
       const messageHistory = await agentMemory.rememberMessages({
         threadId: sessionId,
-        resourceId: "catAgent"
+        resourceId
       });
+
+      console.log(
+        "Loaded message history:",
+        messageHistory.uiMessages.length,
+        "messages"
+      );
 
       return new Response(
         JSON.stringify({ messages: messageHistory.uiMessages }),
@@ -59,7 +77,12 @@ export const GET = async (req: Request) => {
       );
     } catch (memoryError) {
       // スレッドが存在しない場合やメモリエラーの場合は空の配列を返す
-      console.log("No messages found for session:", sessionId);
+      console.log(
+        "No messages found for session:",
+        sessionId,
+        "error:",
+        memoryError
+      );
       return new Response(JSON.stringify({ messages: [] }), {
         status: 200,
         headers: {
@@ -87,6 +110,9 @@ export const POST = async (req: Request) => {
     const { messages } = await req.json();
 
     const sessionId = req.headers.get("x-session-id") || "default-session";
+    const userId = req.headers.get("x-user-id"); // クライアントからuserIdを受け取る
+
+    console.log("POST /api/chat - sessionId:", sessionId, "userId:", userId);
 
     const lastMessage = messages[messages.length - 1];
     const imageDataMatch = lastMessage.content.match(
@@ -121,7 +147,8 @@ export const POST = async (req: Request) => {
               content: finalText
             }
           ],
-          sessionId
+          sessionId,
+          userId
         );
         return stream.toDataStreamResponse();
       } catch (workflowError) {
@@ -137,13 +164,14 @@ export const POST = async (req: Request) => {
               content: "画像の分析に失敗しました"
             }
           ],
-          sessionId
+          sessionId,
+          userId
         );
         return stream.toDataStreamResponse();
       }
     }
 
-    const stream = await streamCatAgent(messages, sessionId);
+    const stream = await streamCatAgent(messages, sessionId, userId);
     return stream.toDataStreamResponse();
   } catch (error) {
     console.error("API Error:", error);

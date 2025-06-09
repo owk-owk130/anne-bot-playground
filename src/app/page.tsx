@@ -14,9 +14,10 @@ import { useAuth } from "~/lib/auth/AuthProvider";
 import ThreadSidebar from "~/components/ThreadSidebar";
 
 export default function Chat() {
-  const { user, loading } = useAuth();
+  const { user, loading, signInWithOAuth } = useAuth();
   const [sessionId, setSessionId] = useState<string>("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const hasLoadedHistoryRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -31,7 +32,8 @@ export default function Chat() {
   } = useChat({
     api: "/api/chat",
     headers: {
-      "x-session-id": sessionId
+      "x-session-id": sessionId,
+      "x-user-id": user?.id || ""
     }
   });
 
@@ -46,76 +48,134 @@ export default function Chat() {
     console.log("User state changed:", user);
   }, [user]);
 
+  // セッション初期化と履歴読み込み
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const initializeApp = async () => {
+    const initializeSession = async () => {
       if (loading) return;
 
-      if (!sessionId && typeof window !== "undefined") {
+      // 認証されていない場合は全てクリア
+      if (!user) {
+        console.log("👤 User not authenticated, clearing session data");
+        setMessages([]);
+        setSessionId("");
+        setIsLoadingHistory(false);
+        hasLoadedHistoryRef.current = false;
+
+        // 古いセッションデータが残っている場合はクリア
+        if (typeof window !== "undefined") {
+          const allKeys = Object.keys(localStorage);
+          const sessionKeys = allKeys.filter((key) =>
+            key.startsWith("sessionId_")
+          );
+          console.log("🧹 Cleaning up old session keys:", sessionKeys);
+          for (const key of sessionKeys) {
+            localStorage.removeItem(key);
+          }
+        }
+        return;
+      }
+
+      // 認証されている場合のセッション初期化
+      if (typeof window !== "undefined") {
         setIsLoadingHistory(true);
+        console.log("🔄 Initializing session for user:", user.id);
 
-        let newSessionId = localStorage.getItem("sessionId");
+        // 現在のユーザー固有のセッションキー
+        const userSessionKey = `sessionId_${user.id}`;
+        const storedSessionId = localStorage.getItem(userSessionKey);
 
-        if (!newSessionId) {
-          newSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-          localStorage.setItem("sessionId", newSessionId);
+        console.log("💾 Stored session ID:", storedSessionId);
+
+        // ユーザー固有の固定セッションIDを使用（常に同じユーザーには同じセッションID）
+        const targetSessionId = `session-${user.id}`;
+
+        // LocalStorageにも保存（一貫性のため）
+        if (storedSessionId !== targetSessionId) {
+          localStorage.setItem(userSessionKey, targetSessionId);
+          console.log(
+            "🔄 Updated session ID to fixed format:",
+            targetSessionId
+          );
+        } else {
+          console.log("♻️ Using existing session ID:", targetSessionId);
         }
 
-        setSessionId(newSessionId);
+        // セッションIDを更新
+        setSessionId(targetSessionId);
 
-        // 前回のメッセージを復元
-        try {
-          console.log("Fetching messages for session:", newSessionId);
-          const response = await fetch(`/api/chat?sessionId=${newSessionId}`, {
-            method: "GET",
-            headers: { "Content-Type": "application/json" }
-          });
+        // 履歴を読み込み（初回のみ）
+        if (!hasLoadedHistoryRef.current) {
+          try {
+            console.log("🔍 Fetching messages for session:", targetSessionId);
+            const response = await fetch(
+              `/api/chat?sessionId=${targetSessionId}&userId=${user.id}`,
+              {
+                method: "GET",
+                headers: { "Content-Type": "application/json" }
+              }
+            );
 
-          console.log("Response status:", response.status);
+            console.log("📡 Response status:", response.status);
 
-          if (response.ok) {
-            const data = await response.json();
-            console.log("Loaded messages:", data);
-            if (Array.isArray(data.messages) && data.messages.length > 0) {
-              setMessages(data.messages);
+            if (response.ok) {
+              const data = await response.json();
+              console.log("💾 Loaded messages from server:", data);
+              if (Array.isArray(data.messages) && data.messages.length > 0) {
+                console.log(
+                  "✅ Setting",
+                  data.messages.length,
+                  "messages to state"
+                );
+                setMessages(data.messages);
+              } else {
+                console.log("📭 No messages found, setting empty array");
+                setMessages([]);
+              }
             } else {
+              console.error(
+                "❌ Failed to load messages:",
+                response.status,
+                response.statusText
+              );
+              const errorData = await response.text();
+              console.error("Error response:", errorData);
               setMessages([]);
             }
-          } else {
-            console.error(
-              "Response not ok:",
-              response.status,
-              response.statusText
-            );
-            const errorData = await response.text();
-            console.error("Error response:", errorData);
+            hasLoadedHistoryRef.current = true;
+          } catch (error) {
+            console.error("💥 Error loading messages:", error);
             setMessages([]);
+            hasLoadedHistoryRef.current = true;
           }
-        } catch (error) {
-          console.error("Error loading messages:", error);
-          setMessages([]);
         }
 
         setIsLoadingHistory(false);
       }
     };
 
-    initializeApp();
-  }, [loading, sessionId, setMessages]);
+    initializeSession();
+  }, [loading, user, setMessages]); // 最小限の依存関係のみ
 
   // 新しい会話を開始
   const handleNewThread = useCallback(() => {
-    const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    if (!user) return; // 認証されていない場合は何もしない
 
-    // 全ユーザー共通でlocalStorageに新しいセッションIDを保存
+    // 新しい会話では、タイムスタンプ付きの新しいセッションIDを生成
+    const newSessionId = `session-${user.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    // ユーザー固有のlocalStorageキーに新しいセッションIDを保存
     if (typeof window !== "undefined") {
-      localStorage.setItem("sessionId", newSessionId);
+      const userSessionKey = `sessionId_${user.id}`;
+      localStorage.setItem(userSessionKey, newSessionId);
     }
 
     setSessionId(newSessionId);
     setMessages([]);
+    hasLoadedHistoryRef.current = false; // 新しいスレッドでは履歴読み込みフラグをリセット
     setSelectedImage(null);
     setImagePrompt("");
-  }, [setMessages]);
+  }, [user, setMessages]);
 
   // メッセージが更新されたときにスクロール
   useEffect(() => {
@@ -215,6 +275,43 @@ export default function Chat() {
       handleSubmit(e);
     }
   };
+
+  // 認証状態のローディング中
+  if (loading) {
+    return (
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-pink-500 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 未認証ユーザー向けUI
+  if (!user) {
+    return (
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-8">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            Anne Bot
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-8">
+            AIチャットボットとの会話を始めるには、まずログインしてください。
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              await signInWithOAuth();
+            }}
+            className="px-6 py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-lg font-medium transition-colors"
+          >
+            Googleでログイン
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
