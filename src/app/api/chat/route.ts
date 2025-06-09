@@ -34,7 +34,7 @@ export const GET = async (req: Request) => {
   try {
     const url = new URL(req.url);
     const sessionId = url.searchParams.get("sessionId") || "default-session";
-    const userId = url.searchParams.get("userId"); // クライアントからuserIdを受け取る
+    const userId = url.searchParams.get("userId") || undefined; // nullをundefinedに変換
 
     console.log("GET /api/chat - sessionId:", sessionId, "userId:", userId);
 
@@ -110,7 +110,7 @@ export const POST = async (req: Request) => {
     const { messages } = await req.json();
 
     const sessionId = req.headers.get("x-session-id") || "default-session";
-    const userId = req.headers.get("x-user-id"); // クライアントからuserIdを受け取る
+    const userId = req.headers.get("x-user-id") || undefined; // nullをundefinedに変換
 
     console.log("POST /api/chat - sessionId:", sessionId, "userId:", userId);
 
