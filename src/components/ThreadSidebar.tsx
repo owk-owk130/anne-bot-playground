@@ -5,7 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useState,
+  useState
 } from "react";
 import { useAuth } from "~/lib/auth/AuthProvider";
 import type { Thread } from "~/types/thread";
@@ -27,7 +27,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
     const [threads, setThreads] = useState<Thread[]>([]);
     const [isLoadingThreads, setIsLoadingThreads] = useState(false);
     const [deletingThreadId, setDeletingThreadId] = useState<string | null>(
-      null,
+      null
     );
 
     // スレッド一覧を取得する関数
@@ -80,15 +80,15 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                 `/api/chat?sessionId=${userThread.thread_id}&userId=${user.id}`,
                 {
                   method: "GET",
-                  headers: { "Content-Type": "application/json" },
-                },
+                  headers: { "Content-Type": "application/json" }
+                }
               );
 
               if (response.ok) {
                 const data = await response.json();
                 console.log(
                   `Thread ${userThread.thread_id} messages:`,
-                  data.messages,
+                  data.messages
                 );
                 if (Array.isArray(data.messages) && data.messages.length > 0) {
                   messageCount = data.messages.length;
@@ -106,19 +106,19 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                   }
                 } else {
                   console.log(
-                    `No messages found for thread ${userThread.thread_id}`,
+                    `No messages found for thread ${userThread.thread_id}`
                   );
                 }
               } else {
                 console.warn(
                   `Failed to fetch messages for thread ${userThread.thread_id}, status:`,
-                  response.status,
+                  response.status
                 );
               }
             } catch (error) {
               console.warn(
                 `Failed to fetch messages for thread ${userThread.thread_id}:`,
-                error,
+                error
               );
             }
 
@@ -128,15 +128,15 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
               lastMessage: lastMessage || "メッセージがありません",
               createdAt: userThread.created_at,
               updatedAt: userThread.updated_at,
-              messageCount: messageCount,
+              messageCount: messageCount
             };
-          }),
+          })
         );
 
         setThreads(threadsWithDetails);
         console.log(
           "✅ Successfully fetched threads:",
-          threadsWithDetails.length,
+          threadsWithDetails.length
         );
       } catch (error) {
         console.error("Error fetching threads:", error);
@@ -153,7 +153,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
 
     // 外部からスレッド一覧を更新できるようにrefを公開
     useImperativeHandle(ref, () => ({
-      refreshThreads: fetchThreads,
+      refreshThreads: fetchThreads
     }));
 
     // Google認証ハンドラー
@@ -183,7 +183,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
         if (!user || !threadId) return;
 
         const isConfirmed = window.confirm(
-          "この会話を削除しますか？この操作は取り消せません。",
+          "この会話を削除しますか？この操作は取り消せません。"
         );
         if (!isConfirmed) return;
 
@@ -215,13 +215,13 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
               `/api/chat?sessionId=${threadId}&userId=${user.id}`,
               {
                 method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-              },
+                headers: { "Content-Type": "application/json" }
+              }
             );
 
             if (!response.ok) {
               console.warn(
-                "Failed to delete thread from Mastra memory, but database deletion succeeded",
+                "Failed to delete thread from Mastra memory, but database deletion succeeded"
               );
             }
           } catch (error) {
@@ -244,7 +244,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
           setDeletingThreadId(null);
         }
       },
-      [user, currentThreadId, onNewThread, fetchThreads],
+      [user, currentThreadId, onNewThread, fetchThreads]
     );
 
     return (
@@ -403,7 +403,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                                   </span>
                                   <span className="text-xs text-gray-400">
                                     {new Date(
-                                      thread.updatedAt,
+                                      thread.updatedAt
                                     ).toLocaleDateString("ja-JP")}
                                   </span>
                                 </div>
@@ -559,7 +559,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
         )}
       </>
     );
-  },
+  }
 );
 
 ThreadSidebar.displayName = "ThreadSidebar";
