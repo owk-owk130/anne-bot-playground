@@ -4,11 +4,11 @@ import type { CoreMessage } from "ai";
 
 const analyzeImageWithWorkflow = async (
   imageDataUrl: string,
-  userPrompt?: string,
+  userPrompt?: string
 ) => {
   const workflowRun = imageAnalysisWorkflow.createRun();
   const workflowResult = await workflowRun.start({
-    inputData: { imageDataUrl, userPrompt },
+    inputData: { imageDataUrl, userPrompt }
   });
   const catStepResult = workflowResult.steps.catResponse;
   return catStepResult?.status === "success"
@@ -19,14 +19,14 @@ const analyzeImageWithWorkflow = async (
 const streamCatAgent = async (
   messages: CoreMessage[],
   threadId: string,
-  userId?: string,
+  userId?: string
 ) => {
   // ユーザーIDがある場合は、ユーザー固有のresourceIdを作成
   const resourceId = userId ? `catAgent:${userId}` : "catAgent";
   const catAgent = mastra.getAgent("catAgent");
   return catAgent.stream(messages, {
     threadId,
-    resourceId,
+    resourceId
   });
 };
 
@@ -45,8 +45,8 @@ export const GET = async (req: Request) => {
       return new Response(JSON.stringify({ messages: [] }), {
         status: 200,
         headers: {
-          "Content-Type": "application/json",
-        },
+          "Content-Type": "application/json"
+        }
       });
     }
 
@@ -57,13 +57,13 @@ export const GET = async (req: Request) => {
 
       const messageHistory = await agentMemory.rememberMessages({
         threadId: sessionId,
-        resourceId,
+        resourceId
       });
 
       console.log(
         "Loaded message history:",
         messageHistory.uiMessages.length,
-        "messages",
+        "messages"
       );
 
       return new Response(
@@ -71,9 +71,9 @@ export const GET = async (req: Request) => {
         {
           status: 200,
           headers: {
-            "Content-Type": "application/json",
-          },
-        },
+            "Content-Type": "application/json"
+          }
+        }
       );
     } catch (memoryError) {
       // スレッドが存在しない場合やメモリエラーの場合は空の配列を返す
@@ -81,13 +81,13 @@ export const GET = async (req: Request) => {
         "No messages found for session:",
         sessionId,
         "error:",
-        memoryError,
+        memoryError
       );
       return new Response(JSON.stringify({ messages: [] }), {
         status: 200,
         headers: {
-          "Content-Type": "application/json",
-        },
+          "Content-Type": "application/json"
+        }
       });
     }
   } catch (error) {
@@ -95,12 +95,12 @@ export const GET = async (req: Request) => {
     return new Response(
       JSON.stringify({
         error: "Internal Server Error",
-        details: error instanceof Error ? error.message : String(error),
+        details: error instanceof Error ? error.message : String(error)
       }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
+        headers: { "Content-Type": "application/json" }
+      }
     );
   }
 };
@@ -116,7 +116,7 @@ export const POST = async (req: Request) => {
 
     const lastMessage = messages[messages.length - 1];
     const imageDataMatch = lastMessage.content.match(
-      /画像データ:\s*(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/,
+      /画像データ:\s*(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/
     );
     const hasImageData = imageDataMatch !== null;
 
@@ -126,29 +126,29 @@ export const POST = async (req: Request) => {
         .replace(/\s*\[img-\d+\]/, "")
         .replace(
           /\n\n画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
-          "",
+          ""
         )
         .trim();
 
       try {
         const finalText = await analyzeImageWithWorkflow(
           imageDataUrl,
-          userText || undefined,
+          userText || undefined
         );
 
         const stream = await streamCatAgent(
           [
             {
               role: "user",
-              content: lastMessage.content,
+              content: lastMessage.content
             },
             {
               role: "assistant",
-              content: finalText,
-            },
+              content: finalText
+            }
           ],
           sessionId,
-          userId,
+          userId
         );
         return stream.toDataStreamResponse();
       } catch (workflowError) {
@@ -157,15 +157,15 @@ export const POST = async (req: Request) => {
           [
             {
               role: "user",
-              content: lastMessage.content,
+              content: lastMessage.content
             },
             {
               role: "assistant",
-              content: "画像の分析に失敗しました",
-            },
+              content: "画像の分析に失敗しました"
+            }
           ],
           sessionId,
-          userId,
+          userId
         );
         return stream.toDataStreamResponse();
       }
@@ -178,12 +178,52 @@ export const POST = async (req: Request) => {
     return new Response(
       JSON.stringify({
         error: "Internal Server Error",
-        details: error instanceof Error ? error.message : String(error),
+        details: error instanceof Error ? error.message : String(error)
       }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
+        headers: { "Content-Type": "application/json" }
+      }
+    );
+  }
+};
+
+export const DELETE = async (req: Request) => {
+  try {
+    const url = new URL(req.url);
+    const sessionId = url.searchParams.get("sessionId");
+    const userId = url.searchParams.get("userId");
+
+    if (!sessionId) {
+      return new Response(JSON.stringify({ error: "Session ID is required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    console.log("DELETE /api/chat - sessionId:", sessionId, "userId:", userId);
+
+    // 現在は単純にsuccessを返す
+    // Mastraメモリーからの削除は今後の機能として残す
+    console.log("✅ Thread deletion request processed:", sessionId);
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+  } catch (error) {
+    console.error("DELETE API Error:", error);
+    return new Response(
+      JSON.stringify({
+        error: "Internal Server Error",
+        details: error instanceof Error ? error.message : String(error)
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      }
     );
   }
 };

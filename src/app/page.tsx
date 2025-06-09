@@ -7,11 +7,13 @@ import {
   useState,
   useEffect,
   useCallback,
-  use,
+  use
 } from "react";
 import type { Message } from "ai";
 import { useAuth } from "~/lib/auth/AuthProvider";
-import ThreadSidebar from "~/components/ThreadSidebar";
+import ThreadSidebar, {
+  type ThreadSidebarRef
+} from "~/components/ThreadSidebar";
 
 export default function Chat() {
   const { user, loading, signInWithOAuth } = useAuth();
@@ -19,6 +21,7 @@ export default function Chat() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const hasLoadedHistoryRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const threadSidebarRef = useRef<ThreadSidebarRef>(null);
 
   const {
     messages,
@@ -29,12 +32,55 @@ export default function Chat() {
     append,
     setMessages,
     status,
+    reload
   } = useChat({
     api: "/api/chat",
     headers: {
       "x-session-id": sessionId,
-      "x-user-id": user?.id || "",
+      "x-user-id": user?.id || ""
     },
+    onFinish: async () => {
+      // メッセージ完了後にスレッド一覧を更新
+      if (threadSidebarRef.current) {
+        threadSidebarRef.current.refreshThreads();
+      }
+
+      // 最初のメッセージが送信された場合、スレッドタイトルを更新
+      if (user && sessionId && messages.length >= 1) {
+        // 1つ以上のメッセージがある場合
+        try {
+          const firstUserMessage = messages.find((msg) => msg.role === "user");
+          if (firstUserMessage) {
+            const title =
+              firstUserMessage.content.slice(0, 50) +
+              (firstUserMessage.content.length > 50 ? "..." : "");
+
+            // クライアントサイドでSupabaseを直接更新
+            const { createClientComponentClient } = await import(
+              "~/lib/supabase/client"
+            );
+            const supabase = createClientComponentClient();
+
+            const { error: dbError } = await supabase
+              .from("user_threads")
+              .update({
+                title: title,
+                updated_at: new Date().toISOString()
+              })
+              .eq("user_id", user.id)
+              .eq("thread_id", sessionId);
+
+            if (dbError) {
+              console.warn("Failed to update thread title:", dbError);
+            } else {
+              console.log("✅ Updated thread title:", title);
+            }
+          }
+        } catch (error) {
+          console.warn("Failed to update thread title:", error);
+        }
+      }
+    }
   });
 
   const [isUploading, setIsUploading] = useState(false);
@@ -66,7 +112,7 @@ export default function Chat() {
         if (typeof window !== "undefined") {
           const allKeys = Object.keys(localStorage);
           const sessionKeys = allKeys.filter((key) =>
-            key.startsWith("sessionId_"),
+            key.startsWith("sessionId_")
           );
           console.log("🧹 Cleaning up old session keys:", sessionKeys);
           for (const key of sessionKeys) {
@@ -87,16 +133,12 @@ export default function Chat() {
 
         console.log("💾 Stored session ID:", storedSessionId);
 
-        // ユーザー固有の固定セッションIDを使用（常に同じユーザーには同じセッションID）
-        const targetSessionId = `session-${user.id}`;
-
-        // LocalStorageにも保存（一貫性のため）
-        if (storedSessionId !== targetSessionId) {
+        // 新しいセッションIDを生成（ユーザーごと + タイムスタンプ）
+        let targetSessionId = storedSessionId;
+        if (!targetSessionId) {
+          targetSessionId = `session-${user.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
           localStorage.setItem(userSessionKey, targetSessionId);
-          console.log(
-            "🔄 Updated session ID to fixed format:",
-            targetSessionId,
-          );
+          console.log("🆕 Created new session ID:", targetSessionId);
         } else {
           console.log("♻️ Using existing session ID:", targetSessionId);
         }
@@ -112,8 +154,8 @@ export default function Chat() {
               `/api/chat?sessionId=${targetSessionId}&userId=${user.id}`,
               {
                 method: "GET",
-                headers: { "Content-Type": "application/json" },
-              },
+                headers: { "Content-Type": "application/json" }
+              }
             );
 
             console.log("📡 Response status:", response.status);
@@ -125,7 +167,7 @@ export default function Chat() {
                 console.log(
                   "✅ Setting",
                   data.messages.length,
-                  "messages to state",
+                  "messages to state"
                 );
                 setMessages(data.messages);
               } else {
@@ -136,7 +178,7 @@ export default function Chat() {
               console.error(
                 "❌ Failed to load messages:",
                 response.status,
-                response.statusText,
+                response.statusText
               );
               const errorData = await response.text();
               console.error("Error response:", errorData);
@@ -158,24 +200,119 @@ export default function Chat() {
   }, [loading, user, setMessages]); // 最小限の依存関係のみ
 
   // 新しい会話を開始
-  const handleNewThread = useCallback(() => {
+  const handleNewThread = useCallback(async () => {
     if (!user) return; // 認証されていない場合は何もしない
 
     // 新しい会話では、タイムスタンプ付きの新しいセッションIDを生成
     const newSessionId = `session-${user.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-    // ユーザー固有のlocalStorageキーに新しいセッションIDを保存
+    console.log("🆕 Starting new thread:", newSessionId);
+
+    try {
+      // クライアントサイドでSupabaseに新しいスレッドを登録
+      const { createClientComponentClient } = await import(
+        "~/lib/supabase/client"
+      );
+      const supabase = createClientComponentClient();
+
+      const { error: dbError } = await supabase.from("user_threads").upsert(
+        {
+          user_id: user.id,
+          thread_id: newSessionId,
+          title: "New Thread",
+          updated_at: new Date().toISOString()
+        },
+        {
+          onConflict: "user_id,thread_id"
+        }
+      );
+
+      if (dbError) {
+        console.warn("Failed to register thread in database:", dbError);
+        // データベース登録に失敗してもスレッドは作成する
+      } else {
+        console.log("✅ Successfully registered new thread:", newSessionId);
+      }
+    } catch (error) {
+      console.warn("Error registering thread:", error);
+      // エラーがあってもスレッドは作成する
+    }
+
+    // ローカルの状態を更新
     if (typeof window !== "undefined") {
       const userSessionKey = `sessionId_${user.id}`;
       localStorage.setItem(userSessionKey, newSessionId);
+      console.log("💾 Updated localStorage with new session ID");
     }
 
-    setSessionId(newSessionId);
+    // 状態をクリア（setMessagesを先に実行）
     setMessages([]);
-    hasLoadedHistoryRef.current = false; // 新しいスレッドでは履歴読み込みフラグをリセット
+    setSessionId(newSessionId);
+    hasLoadedHistoryRef.current = true; // 新しいスレッドでは履歴読み込みを不要にする
     setSelectedImage(null);
     setImagePrompt("");
-  }, [user, setMessages]);
+
+    console.log("🧹 Cleared all messages and state for new thread");
+
+    // useChat hookをリロードして新しいセッションIDを確実に反映
+    if (reload) {
+      setTimeout(() => {
+        reload();
+      }, 100);
+    }
+
+    // スレッド一覧を更新
+    if (threadSidebarRef.current) {
+      threadSidebarRef.current.refreshThreads();
+    }
+  }, [user, setMessages, reload]);
+
+  // 既存のスレッドに切り替え
+  const handleThreadSelect = useCallback(
+    async (threadId: string) => {
+      if (!user) return;
+
+      console.log("🔄 Switching to thread:", threadId);
+      setIsLoadingHistory(true);
+
+      try {
+        // ユーザー固有のlocalStorageキーに切り替え先のセッションIDを保存
+        if (typeof window !== "undefined") {
+          const userSessionKey = `sessionId_${user.id}`;
+          localStorage.setItem(userSessionKey, threadId);
+        }
+
+        setSessionId(threadId);
+
+        // 既存のスレッドの履歴を読み込み
+        const response = await fetch(
+          `/api/chat?sessionId=${threadId}&userId=${user.id}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          console.log(
+            "📚 Loaded thread history:",
+            data.messages.length,
+            "messages"
+          );
+          setMessages(data.messages || []);
+        } else {
+          console.error("Failed to load thread history");
+          setMessages([]);
+        }
+
+        hasLoadedHistoryRef.current = true;
+        setSelectedImage(null);
+        setImagePrompt("");
+      } catch (error) {
+        console.error("Error switching thread:", error);
+        setMessages([]);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    },
+    [user, setMessages]
+  );
 
   // メッセージが更新されたときにスクロール
   useEffect(() => {
@@ -209,7 +346,7 @@ export default function Chat() {
 
       await append({
         role: "user",
-        content: fullMessage,
+        content: fullMessage
       });
 
       setSelectedImage(null);
@@ -225,11 +362,11 @@ export default function Chat() {
   const renderMessage = (m: Message) => {
     const messageContent = m.content.replace(
       /画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,
-      "",
+      ""
     );
 
     const imageMatch = m.content.match(
-      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
+      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/
     );
     const imageData = imageMatch ? imageMatch[0] : null;
 
@@ -316,7 +453,12 @@ export default function Chat() {
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       {/* サイドバー */}
-      <ThreadSidebar onNewThread={handleNewThread} />
+      <ThreadSidebar
+        ref={threadSidebarRef}
+        onNewThread={handleNewThread}
+        onThreadSelect={handleThreadSelect}
+        currentThreadId={sessionId}
+      />
 
       {/* メインチャットエリア */}
       <div className="flex-1 flex flex-col md:ml-80">
