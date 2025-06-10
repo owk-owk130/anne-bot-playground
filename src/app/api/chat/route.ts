@@ -86,12 +86,13 @@ export const POST = async (req: Request) => {
           [
             {
               role: "user",
-              content: lastMessage.content
-            },
-            {
-              role: "assistant",
-              content: finalText
+              content: "この画像を分析して"
+              // content: lastMessage.content
             }
+            // {
+            //   role: "assistant",
+            //   content: finalText
+            // }
           ],
           sessionId,
           userId
