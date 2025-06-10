@@ -8,11 +8,9 @@ import {
   useCallback,
   useEffect,
   useRef,
-  useState,
+  useState
 } from "react";
-import ThreadSidebar, {
-  type ThreadSidebarRef,
-} from "~/components/ThreadSidebar";
+import ThreadSidebar from "~/components/ThreadSidebar";
 import { useAuth } from "~/lib/auth/AuthProvider";
 
 export default function Chat() {
@@ -21,7 +19,6 @@ export default function Chat() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const hasLoadedHistoryRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const threadSidebarRef = useRef<ThreadSidebarRef>(null);
 
   const {
     messages,
@@ -32,55 +29,13 @@ export default function Chat() {
     append,
     setMessages,
     status,
-    reload,
+    reload
   } = useChat({
     api: "/api/chat",
     headers: {
       "x-session-id": sessionId,
-      "x-user-id": user?.id || "",
-    },
-    onFinish: async () => {
-      // メッセージ完了後にスレッド一覧を更新
-      if (threadSidebarRef.current) {
-        threadSidebarRef.current.refreshThreads();
-      }
-
-      // 最初のメッセージが送信された場合、スレッドタイトルを更新
-      if (user && sessionId && messages.length >= 1) {
-        // 1つ以上のメッセージがある場合
-        try {
-          const firstUserMessage = messages.find((msg) => msg.role === "user");
-          if (firstUserMessage) {
-            const title =
-              firstUserMessage.content.slice(0, 50) +
-              (firstUserMessage.content.length > 50 ? "..." : "");
-
-            // クライアントサイドでSupabaseを直接更新
-            const { createClientComponentClient } = await import(
-              "~/lib/supabase/client"
-            );
-            const supabase = createClientComponentClient();
-
-            const { error: dbError } = await supabase
-              .from("user_threads")
-              .update({
-                title: title,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("user_id", user.id)
-              .eq("thread_id", sessionId);
-
-            if (dbError) {
-              console.warn("Failed to update thread title:", dbError);
-            } else {
-              console.log("✅ Updated thread title:", title);
-            }
-          }
-        } catch (error) {
-          console.warn("Failed to update thread title:", error);
-        }
-      }
-    },
+      "x-user-id": user?.id || ""
+    }
   });
 
   const [isUploading, setIsUploading] = useState(false);
@@ -94,234 +49,139 @@ export default function Chat() {
     console.log("User state changed:", user);
   }, [user]);
 
-  // セッション初期化と履歴読み込み
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const initializeSession = async () => {
       if (loading) return;
-
-      // 認証されていない場合は全てクリア
       if (!user) {
-        console.log("👤 User not authenticated, clearing session data");
         setMessages([]);
         setSessionId("");
         setIsLoadingHistory(false);
         hasLoadedHistoryRef.current = false;
-
-        // 古いセッションデータが残っている場合はクリア
         if (typeof window !== "undefined") {
           const allKeys = Object.keys(localStorage);
           const sessionKeys = allKeys.filter((key) =>
-            key.startsWith("sessionId_"),
+            key.startsWith("sessionId_")
           );
-          console.log("🧹 Cleaning up old session keys:", sessionKeys);
           for (const key of sessionKeys) {
             localStorage.removeItem(key);
           }
         }
         return;
       }
-
-      // 認証されている場合のセッション初期化
       if (typeof window !== "undefined") {
         setIsLoadingHistory(true);
-        console.log("🔄 Initializing session for user:", user.id);
-
-        // 現在のユーザー固有のセッションキー
         const userSessionKey = `sessionId_${user.id}`;
         const storedSessionId = localStorage.getItem(userSessionKey);
-
-        console.log("💾 Stored session ID:", storedSessionId);
-
-        // 新しいセッションIDを生成（ユーザーごと + タイムスタンプ）
         let targetSessionId = storedSessionId;
         if (!targetSessionId) {
           targetSessionId = `session-${user.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
           localStorage.setItem(userSessionKey, targetSessionId);
-          console.log("🆕 Created new session ID:", targetSessionId);
-        } else {
-          console.log("♻️ Using existing session ID:", targetSessionId);
         }
-
-        // セッションIDを更新
         setSessionId(targetSessionId);
-
-        // 履歴を読み込み（初回のみ）
         if (!hasLoadedHistoryRef.current) {
           try {
-            console.log("🔍 Fetching messages for session:", targetSessionId);
             const response = await fetch(
               `/api/chat?sessionId=${targetSessionId}&userId=${user.id}`,
               {
                 method: "GET",
-                headers: { "Content-Type": "application/json" },
-              },
+                headers: { "Content-Type": "application/json" }
+              }
             );
-
-            console.log("📡 Response status:", response.status);
-
             if (response.ok) {
               const data = await response.json();
-              console.log("💾 Loaded messages from server:", data);
               if (Array.isArray(data.messages) && data.messages.length > 0) {
-                console.log(
-                  "✅ Setting",
-                  data.messages.length,
-                  "messages to state",
-                );
                 setMessages(data.messages);
               } else {
-                console.log("📭 No messages found, setting empty array");
                 setMessages([]);
               }
             } else {
-              console.error(
-                "❌ Failed to load messages:",
-                response.status,
-                response.statusText,
-              );
-              const errorData = await response.text();
-              console.error("Error response:", errorData);
               setMessages([]);
             }
             hasLoadedHistoryRef.current = true;
-          } catch (error) {
-            console.error("💥 Error loading messages:", error);
+          } catch {
             setMessages([]);
             hasLoadedHistoryRef.current = true;
           }
         }
-
         setIsLoadingHistory(false);
       }
     };
-
     initializeSession();
-  }, [loading, user, setMessages]); // 最小限の依存関係のみ
+  }, [loading, user, setMessages]);
 
-  // 新しい会話を開始
   const handleNewThread = useCallback(async () => {
-    if (!user) return; // 認証されていない場合は何もしない
-
-    // 新しい会話では、タイムスタンプ付きの新しいセッションIDを生成
+    if (!user) return;
     const newSessionId = `session-${user.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-    console.log("🆕 Starting new thread:", newSessionId);
-
     try {
-      // クライアントサイドでSupabaseに新しいスレッドを登録
       const { createClientComponentClient } = await import(
         "~/lib/supabase/client"
       );
       const supabase = createClientComponentClient();
-
-      const { error: dbError } = await supabase.from("user_threads").upsert(
+      await supabase.from("user_threads").upsert(
         {
           user_id: user.id,
           thread_id: newSessionId,
           title: "New Thread",
-          updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         },
         {
-          onConflict: "user_id,thread_id",
-        },
+          onConflict: "user_id,thread_id"
+        }
       );
-
-      if (dbError) {
-        console.warn("Failed to register thread in database:", dbError);
-        // データベース登録に失敗してもスレッドは作成する
-      } else {
-        console.log("✅ Successfully registered new thread:", newSessionId);
-      }
-    } catch (error) {
-      console.warn("Error registering thread:", error);
-      // エラーがあってもスレッドは作成する
-    }
-
-    // ローカルの状態を更新
+    } catch {}
     if (typeof window !== "undefined") {
       const userSessionKey = `sessionId_${user.id}`;
       localStorage.setItem(userSessionKey, newSessionId);
-      console.log("💾 Updated localStorage with new session ID");
     }
-
-    // 状態をクリア（setMessagesを先に実行）
     setMessages([]);
     setSessionId(newSessionId);
-    hasLoadedHistoryRef.current = true; // 新しいスレッドでは履歴読み込みを不要にする
+    hasLoadedHistoryRef.current = true;
     setSelectedImage(null);
     setImagePrompt("");
-
-    console.log("🧹 Cleared all messages and state for new thread");
-
-    // useChat hookをリロードして新しいセッションIDを確実に反映
     if (reload) {
       setTimeout(() => {
         reload();
       }, 100);
     }
-
-    // スレッド一覧を更新
-    if (threadSidebarRef.current) {
-      threadSidebarRef.current.refreshThreads();
-    }
   }, [user, setMessages, reload]);
 
-  // 既存のスレッドに切り替え
   const handleThreadSelect = useCallback(
     async (threadId: string) => {
       if (!user) return;
-
-      console.log("🔄 Switching to thread:", threadId);
       setIsLoadingHistory(true);
-
       try {
-        // ユーザー固有のlocalStorageキーに切り替え先のセッションIDを保存
         if (typeof window !== "undefined") {
           const userSessionKey = `sessionId_${user.id}`;
           localStorage.setItem(userSessionKey, threadId);
         }
-
         setSessionId(threadId);
-
-        // 既存のスレッドの履歴を読み込み
         const response = await fetch(
-          `/api/chat?sessionId=${threadId}&userId=${user.id}`,
+          `/api/chat?sessionId=${threadId}&userId=${user.id}`
         );
         if (response.ok) {
           const data = await response.json();
-          console.log(
-            "📚 Loaded thread history:",
-            data.messages.length,
-            "messages",
-          );
           setMessages(data.messages || []);
         } else {
-          console.error("Failed to load thread history");
           setMessages([]);
         }
-
         hasLoadedHistoryRef.current = true;
         setSelectedImage(null);
         setImagePrompt("");
-      } catch (error) {
-        console.error("Error switching thread:", error);
+      } catch {
         setMessages([]);
       } finally {
         setIsLoadingHistory(false);
       }
     },
-    [user, setMessages],
+    [user, setMessages]
   );
 
-  // メッセージが更新されたときにスクロール
   useEffect(() => {
     if (messagesEndRef.current && messages.length > 0) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   });
 
-  // 画像アップロード処理
   const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -334,7 +194,6 @@ export default function Chat() {
     reader.readAsDataURL(file);
   };
 
-  // 画像分析処理
   const handleImageAnalysis = async () => {
     if (!selectedImage || isAIProcessing) return;
 
@@ -346,27 +205,25 @@ export default function Chat() {
 
       await append({
         role: "user",
-        content: fullMessage,
+        content: fullMessage
       });
 
       setSelectedImage(null);
       setImagePrompt("");
     } catch (error) {
-      console.error("Error analyzing image:", error);
     } finally {
       setIsUploading(false);
     }
   };
 
-  // メッセージレンダリング
   const renderMessage = (m: Message) => {
     const messageContent = m.content.replace(
       /画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,
-      "",
+      ""
     );
 
     const imageMatch = m.content.match(
-      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
+      /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/
     );
     const imageData = imageMatch ? imageMatch[0] : null;
 
@@ -401,19 +258,11 @@ export default function Chat() {
     );
   };
 
-  // フォーム送信処理
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
-    try {
-      handleSubmit(e);
-    } catch (error) {
-      console.error("Error in message submission:", error);
-      handleSubmit(e);
-    }
+    handleSubmit(e);
   };
 
-  // 認証状態のローディング中
   if (loading) {
     return (
       <div className="flex h-screen bg-gray-50 dark:bg-gray-900 items-center justify-center">
@@ -425,7 +274,6 @@ export default function Chat() {
     );
   }
 
-  // 未認証ユーザー向けUI
   if (!user) {
     return (
       <div className="flex h-screen bg-gray-50 dark:bg-gray-900 items-center justify-center">
@@ -454,7 +302,6 @@ export default function Chat() {
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       {/* サイドバー */}
       <ThreadSidebar
-        ref={threadSidebarRef}
         onNewThread={handleNewThread}
         onThreadSelect={handleThreadSelect}
         currentThreadId={sessionId}
