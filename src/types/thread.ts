@@ -2,7 +2,7 @@ export interface Thread {
   id: string;
   title: string;
   lastMessage?: string;
-  messageCount: number;
+  messageCount?: number; // オプショナルに変更
   createdAt: string;
   updatedAt: string;
 }

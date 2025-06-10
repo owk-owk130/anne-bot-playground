@@ -30,7 +30,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
       null
     );
 
-    // スレッド一覧を取得する関数
+    // スレッド一覧を取得する関数（パフォーマンス最適化版）
     const fetchThreads = useCallback(async () => {
       if (!user) {
         setThreads([]);
@@ -41,7 +41,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
       try {
         console.log("🔍 Fetching threads for user:", user.id);
 
-        // クライアントサイドでSupabaseから直接取得
+        // クライアントサイドでSupabaseから直接取得（APIリクエストを1回のみに削減）
         const { createClientComponentClient } = await import(
           "~/lib/supabase/client"
         );
@@ -59,7 +59,7 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
           return;
         }
 
-        // スレッド詳細情報を準備（Mastraからメッセージ情報を取得）
+        // スレッド詳細情報を準備（APIリクエスト回数を削減）
         interface UserThread {
           id: string;
           user_id: string;
@@ -69,67 +69,15 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
           updated_at: string;
         }
 
-        const threadsWithDetails = await Promise.all(
-          (userThreads || []).map(async (userThread: UserThread) => {
-            let messageCount = 0;
-            let lastMessage = undefined;
-
-            try {
-              // Mastraからメッセージを取得してメッセージ数を計算
-              const response = await fetch(
-                `/api/chat?sessionId=${userThread.thread_id}&userId=${user.id}`,
-                {
-                  method: "GET",
-                  headers: { "Content-Type": "application/json" }
-                }
-              );
-
-              if (response.ok) {
-                const data = await response.json();
-                console.log(
-                  `Thread ${userThread.thread_id} messages:`,
-                  data.messages
-                );
-                if (Array.isArray(data.messages) && data.messages.length > 0) {
-                  messageCount = data.messages.length;
-                  // 最後のメッセージを取得（ユーザーまたはアシスタントの最新メッセージ）
-                  const lastMsg = data.messages[data.messages.length - 1];
-                  if (lastMsg) {
-                    const content =
-                      typeof lastMsg.content === "string"
-                        ? lastMsg.content
-                        : JSON.stringify(lastMsg.content);
-                    lastMessage =
-                      content.length > 50
-                        ? `${content.substring(0, 50)}...`
-                        : content;
-                  }
-                } else {
-                  console.log(
-                    `No messages found for thread ${userThread.thread_id}`
-                  );
-                }
-              } else {
-                console.warn(
-                  `Failed to fetch messages for thread ${userThread.thread_id}, status:`,
-                  response.status
-                );
-              }
-            } catch (error) {
-              console.warn(
-                `Failed to fetch messages for thread ${userThread.thread_id}:`,
-                error
-              );
-            }
-
-            return {
-              id: userThread.thread_id,
-              title: userThread.title || "New Thread",
-              lastMessage: lastMessage || "メッセージがありません",
-              createdAt: userThread.created_at,
-              updatedAt: userThread.updated_at,
-              messageCount: messageCount
-            };
+        // Supabaseからの基本情報のみを使用してスレッド一覧を作成
+        const threadsWithDetails = (userThreads || []).map(
+          (userThread: UserThread) => ({
+            id: userThread.thread_id,
+            title: userThread.title || "新しい会話",
+            lastMessage: "会話を開いて確認", // 簡略化
+            createdAt: userThread.created_at,
+            updatedAt: userThread.updated_at
+            // messageCountは削除
           })
         );
 
@@ -398,9 +346,6 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
                                   </p>
                                 )}
                                 <div className="flex items-center space-x-2 mt-2">
-                                  <span className="text-xs text-gray-400">
-                                    {thread.messageCount}件のメッセージ
-                                  </span>
                                   <span className="text-xs text-gray-400">
                                     {new Date(
                                       thread.updatedAt
