@@ -4,11 +4,11 @@ import { imageAnalysisWorkflow } from "~/mastra/workflows";
 
 const analyzeImageWithWorkflow = async (
   imageDataUrl: string,
-  userPrompt?: string,
+  userPrompt?: string
 ) => {
   const workflowRun = imageAnalysisWorkflow.createRun();
   const workflowResult = await workflowRun.start({
-    inputData: { imageDataUrl, userPrompt },
+    inputData: { imageDataUrl, userPrompt }
   });
   const catStepResult = workflowResult.steps.catResponse;
   return catStepResult?.status === "success"
@@ -19,171 +19,108 @@ const analyzeImageWithWorkflow = async (
 const streamCatAgent = async (
   messages: CoreMessage[],
   threadId: string,
-  userId?: string,
+  userId?: string
 ) => {
-  // ユーザーIDがある場合は、ユーザー固有のresourceIdを作成
   const resourceId = userId ? `catAgent:${userId}` : "catAgent";
   const catAgent = mastra.getAgent("catAgent");
-  return catAgent.stream(messages, {
-    threadId,
-    resourceId,
-  });
+  return catAgent.stream(messages, { threadId, resourceId });
 };
 
 export const GET = async (req: Request) => {
   try {
     const url = new URL(req.url);
     const sessionId = url.searchParams.get("sessionId") || "default-session";
-    const userId = url.searchParams.get("userId") || undefined; // nullをundefinedに変換
-
-    console.log("GET /api/chat - sessionId:", sessionId, "userId:", userId);
-
+    const userId = url.searchParams.get("userId") || undefined;
     const catAgent = mastra.getAgent("catAgent");
     const agentMemory = catAgent.getMemory();
-
     if (!agentMemory) {
       return new Response(JSON.stringify({ messages: [] }), {
         status: 200,
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" }
       });
     }
-
-    try {
-      // ユーザー固有のresourceIdを使用
-      const resourceId = userId ? `catAgent:${userId}` : "catAgent";
-      console.log("Using resourceId:", resourceId, "threadId:", sessionId);
-
-      const messageHistory = await agentMemory.rememberMessages({
-        threadId: sessionId,
-        resourceId,
-      });
-
-      console.log(
-        "Loaded message history:",
-        messageHistory.uiMessages.length,
-        "messages",
-      );
-
-      return new Response(
-        JSON.stringify({ messages: messageHistory.uiMessages }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      );
-    } catch (memoryError) {
-      // スレッドが存在しない場合やメモリエラーの場合は空の配列を返す
-      console.log(
-        "No messages found for session:",
-        sessionId,
-        "error:",
-        memoryError,
-      );
-      return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    }
-  } catch (error) {
-    console.error("GET API Error:", error);
+    const resourceId = userId ? `catAgent:${userId}` : "catAgent";
+    const messageHistory = await agentMemory.rememberMessages({
+      threadId: sessionId,
+      resourceId
+    });
     return new Response(
-      JSON.stringify({
-        error: "Internal Server Error",
-        details: error instanceof Error ? error.message : String(error),
-      }),
+      JSON.stringify({ messages: messageHistory.uiMessages }),
       {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      }
     );
+  } catch {
+    return new Response(JSON.stringify({ messages: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   }
 };
 
 export const POST = async (req: Request) => {
   try {
     const { messages } = await req.json();
-
     const sessionId = req.headers.get("x-session-id") || "default-session";
-    const userId = req.headers.get("x-user-id") || undefined; // nullをundefinedに変換
-
-    console.log("POST /api/chat - sessionId:", sessionId, "userId:", userId);
-
+    const userId = req.headers.get("x-user-id") || undefined;
     const lastMessage = messages[messages.length - 1];
     const imageDataMatch = lastMessage.content.match(
-      /画像データ:\s*(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/,
+      /画像データ:\s*(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/
     );
-    const hasImageData = imageDataMatch !== null;
-
-    if (hasImageData) {
+    if (imageDataMatch) {
       const imageDataUrl = imageDataMatch[1];
       const userText = lastMessage.content
         .replace(/\s*\[img-\d+\]/, "")
         .replace(
           /\n\n画像データ:\s*data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/,
-          "",
+          ""
         )
         .trim();
-
       try {
         const finalText = await analyzeImageWithWorkflow(
           imageDataUrl,
-          userText || undefined,
+          userText || undefined
         );
-
         const stream = await streamCatAgent(
           [
             {
               role: "user",
-              content: lastMessage.content,
+              content: lastMessage.content
             },
             {
               role: "assistant",
-              content: finalText,
-            },
+              content: finalText
+            }
           ],
           sessionId,
-          userId,
+          userId
         );
         return stream.toDataStreamResponse();
-      } catch (workflowError) {
-        console.error("Workflow error:", workflowError);
+      } catch {
         const stream = await streamCatAgent(
           [
-            {
-              role: "user",
-              content: lastMessage.content,
-            },
-            {
-              role: "assistant",
-              content: "画像の分析に失敗しました",
-            },
+            { role: "user", content: lastMessage.content },
+            { role: "assistant", content: "画像の分析に失敗しました" }
           ],
           sessionId,
-          userId,
+          userId
         );
         return stream.toDataStreamResponse();
       }
     }
-
     const stream = await streamCatAgent(messages, sessionId, userId);
     return stream.toDataStreamResponse();
   } catch (error) {
-    console.error("API Error:", error);
     return new Response(
       JSON.stringify({
         error: "Internal Server Error",
-        details: error instanceof Error ? error.message : String(error),
+        details: error instanceof Error ? error.message : String(error)
       }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
+        headers: { "Content-Type": "application/json" }
+      }
     );
   }
 };
@@ -192,38 +129,26 @@ export const DELETE = async (req: Request) => {
   try {
     const url = new URL(req.url);
     const sessionId = url.searchParams.get("sessionId");
-    const userId = url.searchParams.get("userId");
-
     if (!sessionId) {
       return new Response(JSON.stringify({ error: "Session ID is required" }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
-
-    console.log("DELETE /api/chat - sessionId:", sessionId, "userId:", userId);
-
-    // 現在は単純にsuccessを返す
-    // Mastraメモリーからの削除は今後の機能として残す
-    console.log("✅ Thread deletion request processed:", sessionId);
-
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" }
     });
   } catch (error) {
-    console.error("DELETE API Error:", error);
     return new Response(
       JSON.stringify({
         error: "Internal Server Error",
-        details: error instanceof Error ? error.message : String(error),
+        details: error instanceof Error ? error.message : String(error)
       }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
+        headers: { "Content-Type": "application/json" }
+      }
     );
   }
 };
