@@ -30,86 +30,53 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
       null
     );
 
-    // スレッド一覧を取得する関数（パフォーマンス最適化版）
     const fetchThreads = useCallback(async () => {
       if (!user) {
         setThreads([]);
         return;
       }
-
       setIsLoadingThreads(true);
       try {
-        console.log("🔍 Fetching threads for user:", user.id);
-
-        // クライアントサイドでSupabaseから直接取得（APIリクエストを1回のみに削減）
-        const { createClientComponentClient } = await import(
-          "~/lib/supabase/client"
-        );
-        const supabase = createClientComponentClient();
-
-        const { data: userThreads, error: dbError } = await supabase
-          .from("user_threads")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("updated_at", { ascending: false });
-
-        if (dbError) {
-          console.error("Database error:", dbError);
+        const res = await fetch(`/api/threads?userId=${user.id}`);
+        if (!res.ok) {
           setThreads([]);
           return;
         }
-
-        // スレッド詳細情報を準備（APIリクエスト回数を削減）
-        interface UserThread {
-          id: string;
-          user_id: string;
-          thread_id: string;
-          title: string | null;
-          created_at: string;
-          updated_at: string;
-        }
-
-        // Supabaseからの基本情報のみを使用してスレッド一覧を作成
+        const { threads: userThreads } = await res.json();
         const threadsWithDetails = (userThreads || []).map(
-          (userThread: UserThread) => ({
+          (userThread: {
+            thread_id: string;
+            title: string | null;
+            created_at: string;
+            updated_at: string;
+          }) => ({
             id: userThread.thread_id,
             title: userThread.title || "新しい会話",
-            lastMessage: "会話を開いて確認", // 簡略化
+            lastMessage: "会話を開いて確認",
             createdAt: userThread.created_at,
             updatedAt: userThread.updated_at
-            // messageCountは削除
           })
         );
-
         setThreads(threadsWithDetails);
-        console.log(
-          "✅ Successfully fetched threads:",
-          threadsWithDetails.length
-        );
-      } catch (error) {
-        console.error("Error fetching threads:", error);
+      } catch {
         setThreads([]);
       } finally {
         setIsLoadingThreads(false);
       }
     }, [user]);
 
-    // ユーザーがログインしたときにスレッド一覧を取得
     useEffect(() => {
       fetchThreads();
     }, [fetchThreads]);
 
-    // 外部からスレッド一覧を更新できるようにrefを公開
     useImperativeHandle(ref, () => ({
       refreshThreads: fetchThreads
     }));
 
-    // Google認証ハンドラー
     const handleGoogleLogin = async () => {
       try {
         await signInWithOAuth();
-      } catch (error) {
-        console.error("Login exception:", error);
+      } catch {
         alert("ログイン処理中にエラーが発生しました。");
       }
     };
@@ -117,76 +84,43 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(
     const handleLogout = async () => {
       try {
         await signOut();
-        setThreads([]); // ログアウト時にスレッド一覧をクリア
-        onNewThread(); // ログアウト後に新しいセッションを開始
-      } catch (error) {
-        console.error("Logout error:", error);
+        setThreads([]);
+        onNewThread();
+      } catch {
         alert("ログアウト処理中にエラーが発生しました。");
       }
     };
 
-    // スレッドを削除する関数
     const deleteThread = useCallback(
       async (threadId: string) => {
         if (!user || !threadId) return;
-
         const isConfirmed = window.confirm(
           "この会話を削除しますか？この操作は取り消せません。"
         );
         if (!isConfirmed) return;
-
         setDeletingThreadId(threadId);
         try {
-          console.log("🗑️ Deleting thread:", threadId);
-
-          // Supabaseからスレッドを削除
-          const { createClientComponentClient } = await import(
-            "~/lib/supabase/client"
+          const res = await fetch(
+            `/api/threads?userId=${user.id}&threadId=${threadId}`,
+            {
+              method: "DELETE"
+            }
           );
-          const supabase = createClientComponentClient();
-
-          const { error: dbError } = await supabase
-            .from("user_threads")
-            .delete()
-            .eq("user_id", user.id)
-            .eq("thread_id", threadId);
-
-          if (dbError) {
-            console.error("Failed to delete thread from database:", dbError);
+          if (!res.ok) {
             alert("スレッドの削除に失敗しました。");
             return;
           }
-
-          // Mastraメモリからも削除を試行
           try {
-            const response = await fetch(
-              `/api/chat?sessionId=${threadId}&userId=${user.id}`,
-              {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" }
-              }
-            );
-
-            if (!response.ok) {
-              console.warn(
-                "Failed to delete thread from Mastra memory, but database deletion succeeded"
-              );
-            }
-          } catch (error) {
-            console.warn("Error deleting from Mastra memory:", error);
-          }
-
-          // 現在のスレッドが削除されたスレッドの場合、新しいスレッドに切り替え
+            await fetch(`/api/chat?sessionId=${threadId}&userId=${user.id}`, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" }
+            });
+          } catch {}
           if (currentThreadId === threadId) {
             onNewThread();
           }
-
-          // スレッド一覧を更新
           await fetchThreads();
-
-          console.log("✅ Successfully deleted thread:", threadId);
-        } catch (error) {
-          console.error("Error deleting thread:", error);
+        } catch {
           alert("スレッドの削除中にエラーが発生しました。");
         } finally {
           setDeletingThreadId(null);
