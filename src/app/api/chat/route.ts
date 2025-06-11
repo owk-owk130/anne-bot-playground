@@ -28,7 +28,9 @@ const streamCatAgent = async (
   threadId: string,
   userId?: string
 ) => {
-  const resourceId = userId ? `catAgent:${userId}` : "catAgent";
+  const resourceId = userId
+    ? `catAgent:${userId}`
+    : `catAgent:guest:${threadId}`;
   const catAgent = mastra.getAgent("catAgent");
   return catAgent.stream(messages, { threadId, resourceId });
 };
@@ -38,6 +40,15 @@ export const GET = async (req: Request) => {
     const url = new URL(req.url);
     const sessionId = url.searchParams.get("sessionId") || "default-session";
     const userId = url.searchParams.get("userId") || undefined;
+
+    // ゲストユーザーの場合は空の履歴を返す
+    if (!userId || sessionId.startsWith("guest-session-")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     const catAgent = mastra.getAgent("catAgent");
     const agentMemory = catAgent.getMemory();
     if (!agentMemory) {
@@ -46,7 +57,7 @@ export const GET = async (req: Request) => {
         headers: { "Content-Type": "application/json" }
       });
     }
-    const resourceId = userId ? `catAgent:${userId}` : "catAgent";
+    const resourceId = `catAgent:${userId}`;
     const messageHistory = await agentMemory.rememberMessages({
       threadId: sessionId,
       resourceId
@@ -91,10 +102,13 @@ export const POST = async (req: Request) => {
         );
 
         const catAgent = mastra.getAgent("catAgent");
-        const resourceId = userId ? `catAgent:${userId}` : "catAgent";
+        const resourceId = userId
+          ? `catAgent:${userId}`
+          : `catAgent:guest:${sessionId}`;
         const agentMemory = catAgent.getMemory();
 
-        if (agentMemory) {
+        if (agentMemory && userId) {
+          // 認証済みユーザーのみメモリに保存
           await agentMemory.addMessage({
             threadId: sessionId,
             resourceId,

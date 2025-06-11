@@ -14,7 +14,7 @@ import ThreadSidebar from "~/components/ThreadSidebar";
 import { useAuth } from "~/lib/auth/AuthProvider";
 
 export default function Chat() {
-  const { user, loading, signInWithOAuth } = useAuth();
+  const { user, loading } = useAuth();
   const [sessionId, setSessionId] = useState<string>("");
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const hasLoadedHistoryRef = useRef(false);
@@ -53,18 +53,17 @@ export default function Chat() {
     const initializeSession = async () => {
       if (loading) return;
       if (!user) {
+        // ゲストユーザー用の一時セッション作成
         setMessages([]);
-        setSessionId("");
         setIsLoadingHistory(false);
-        hasLoadedHistoryRef.current = false;
+        hasLoadedHistoryRef.current = true;
         if (typeof window !== "undefined") {
-          const allKeys = Object.keys(localStorage);
-          const sessionKeys = allKeys.filter((key) =>
-            key.startsWith("sessionId_")
-          );
-          for (const key of sessionKeys) {
-            localStorage.removeItem(key);
+          let guestSessionId = localStorage.getItem("guest_sessionId");
+          if (!guestSessionId) {
+            guestSessionId = `guest-session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+            localStorage.setItem("guest_sessionId", guestSessionId);
           }
+          setSessionId(guestSessionId);
         }
         return;
       }
@@ -110,7 +109,24 @@ export default function Chat() {
   }, [loading, user, setMessages]);
 
   const handleNewThread = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      // ゲストユーザー用の新しいセッション
+      const newGuestSessionId = `guest-session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("guest_sessionId", newGuestSessionId);
+      }
+      setMessages([]);
+      setSessionId(newGuestSessionId);
+      hasLoadedHistoryRef.current = true;
+      setSelectedImage(null);
+      setImagePrompt("");
+      if (reload) {
+        setTimeout(() => {
+          reload();
+        }, 100);
+      }
+      return;
+    }
     const newSessionId = `session-${user.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     try {
       const { createClientComponentClient } = await import(
@@ -269,30 +285,6 @@ export default function Chat() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-pink-500 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">読み込み中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 items-center justify-center">
-        <div className="text-center max-w-md mx-auto p-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
-            Anne Bot
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-8">
-            AIチャットボットとの会話を始めるには、まずログインしてください。
-          </p>
-          <button
-            type="button"
-            onClick={async () => {
-              await signInWithOAuth();
-            }}
-            className="px-6 py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-lg font-medium transition-colors"
-          >
-            Googleでログイン
-          </button>
         </div>
       </div>
     );
