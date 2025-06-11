@@ -14,10 +14,10 @@ export const memory = new Memory({
     port,
     user,
     database,
-    password
+    password,
   }),
   vector: new PgVector({ connectionString }),
   options: {
-    lastMessages: 50
-  }
+    lastMessages: 50,
+  },
 });

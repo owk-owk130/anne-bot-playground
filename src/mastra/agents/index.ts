@@ -1,5 +1,5 @@
-import { Agent } from "@mastra/core/agent";
 import { google } from "@ai-sdk/google";
+import { Agent } from "@mastra/core/agent";
 import { memory } from "~/mastra/tools/memory";
 
 export const imageAnalysisAgent = new Agent({
@@ -31,7 +31,7 @@ export const imageAnalysisAgent = new Agent({
     
     analysis は最低でも3-4文以上の詳細な観察内容を含めてください。`,
   model: google("gemini-1.5-flash"),
-  memory: memory
+  memory: memory,
 });
 
 export const catAgent = new Agent({
@@ -80,5 +80,5 @@ export const catAgent = new Agent({
     常に猫の視点で、直接画像を見ているかのように自然に返答してください。
     `,
   model: google("gemini-1.5-flash"),
-  memory: memory
+  memory: memory,
 });
