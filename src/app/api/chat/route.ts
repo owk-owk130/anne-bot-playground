@@ -6,14 +6,21 @@ const analyzeImageWithWorkflow = async (
   imageDataUrl: string,
   userPrompt?: string
 ) => {
-  const workflowRun = imageAnalysisWorkflow.createRun();
-  const workflowResult = await workflowRun.start({
-    inputData: { imageDataUrl, userPrompt }
-  });
-  const catStepResult = workflowResult.steps.catResponse;
-  return catStepResult?.status === "success"
-    ? catStepResult.output?.text
-    : "画像の分析に失敗しました";
+  try {
+    const workflowRun = imageAnalysisWorkflow.createRun();
+    const workflowResult = await workflowRun.start({
+      inputData: { imageDataUrl, userPrompt }
+    });
+
+    const catStepResult = workflowResult.steps.catResponse;
+
+    return catStepResult?.status === "success"
+      ? catStepResult.output?.text
+      : "画像の分析に失敗しました";
+  } catch (error) {
+    console.error("ワークフロー実行エラー:", error);
+    throw error;
+  }
 };
 
 const streamCatAgent = async (
@@ -78,35 +85,67 @@ export const POST = async (req: Request) => {
         )
         .trim();
       try {
-        const finalText = await analyzeImageWithWorkflow(
+        const catResponse = await analyzeImageWithWorkflow(
           imageDataUrl,
           userText || undefined
         );
-        const stream = await streamCatAgent(
-          [
-            {
-              role: "user",
-              content: "この画像を分析して"
-              // content: lastMessage.content
+
+        const catAgent = mastra.getAgent("catAgent");
+        const resourceId = userId ? `catAgent:${userId}` : "catAgent";
+        const agentMemory = catAgent.getMemory();
+
+        if (agentMemory) {
+          await agentMemory.addMessage({
+            threadId: sessionId,
+            resourceId,
+            content: userText || "画像を分析してください",
+            role: "user",
+            type: "text"
+          });
+
+          await agentMemory.addMessage({
+            threadId: sessionId,
+            resourceId,
+            content: catResponse,
+            role: "assistant",
+            type: "text"
+          });
+        }
+
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(
+                encoder.encode(
+                  `0:"${catResponse.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                )
+              );
+              controller.close();
             }
-            // {
-            //   role: "assistant",
-            //   content: finalText
-            // }
-          ],
-          sessionId,
-          userId
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "text/plain; charset=utf-8",
+              "X-Vercel-AI-Data-Stream": "v1"
+            }
+          }
         );
-        return stream.toDataStreamResponse();
-      } catch {
-        const stream = await streamCatAgent(
-          [
-            { role: "user", content: lastMessage.content },
-            { role: "assistant", content: "画像の分析に失敗しました" }
-          ],
-          sessionId,
-          userId
-        );
+      } catch (error) {
+        console.error("画像分析エラー:", error);
+        const errorMessages: CoreMessage[] = [
+          ...messages.slice(0, -1),
+          {
+            role: "user",
+            content: userText || "画像を分析してください"
+          },
+          {
+            role: "assistant",
+            content: `画像の分析に失敗しました: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ];
+        const stream = await streamCatAgent(errorMessages, sessionId, userId);
         return stream.toDataStreamResponse();
       }
     }
