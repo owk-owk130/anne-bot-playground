@@ -49,6 +49,23 @@ export const useThreadManager = ({
     []
   );
 
+  // スレッドを作成するfetch関数
+  const createThreadApi = useCallback(
+    async (userId: string, threadId: string, title: string = "New Thread") => {
+      try {
+        const response = await fetch("/api/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, threadId, title })
+        });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    },
+    []
+  );
+
   // 初期履歴ロード
   useEffect(() => {
     const loadInitialHistory = async () => {
@@ -86,25 +103,25 @@ export const useThreadManager = ({
       ? `guest-session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
       : `session-${user.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-    // 認証済みユーザーの場合はDBにスレッド情報を保存
+    // 認証済みユーザーの場合はAPIでスレッド情報を保存
     if (user) {
       try {
-        const { createClientComponentClient } = await import(
-          "~/lib/supabase/client"
-        );
-        const supabase = createClientComponentClient();
-        await supabase.from("user_threads").upsert(
-          {
-            user_id: user.id,
-            thread_id: newSessionId,
-            title: "New Thread",
-            updated_at: new Date().toISOString()
-          },
-          {
-            onConflict: "user_id,thread_id"
-          }
-        );
-      } catch {}
+        const response = await fetch("/api/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            threadId: newSessionId,
+            title: "New Thread"
+          })
+        });
+
+        if (!response.ok) {
+          console.error("Failed to create thread");
+        }
+      } catch (error) {
+        console.error("Error creating thread:", error);
+      }
     }
 
     // セッションIDを更新
