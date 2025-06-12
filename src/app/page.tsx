@@ -7,15 +7,15 @@ import { MessageItem } from "~/components/MessageItem";
 import { ImagePreview } from "~/components/ImagePreview";
 import { ChatInputForm } from "~/components/ChatInputForm";
 import { useAuth } from "~/lib/auth/AuthProvider";
-import { useSessionManager } from "~/hooks/useSessionManager";
+import { useSessionId } from "~/hooks/useSessionId";
+import { useThreadManager } from "~/hooks/useThreadManager";
 import { useImageUpload } from "~/hooks/useImageUpload";
 
 export default function Chat() {
   const { user, loading } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 初期状態でsessionIdを空文字列として設定
-  const [currentSessionId, setCurrentSessionId] = useState("");
+  const { sessionId, updateSessionId } = useSessionId();
 
   const {
     messages,
@@ -30,20 +30,18 @@ export default function Chat() {
   } = useChat({
     api: "/api/chat",
     headers: {
-      "x-session-id": currentSessionId,
+      "x-session-id": sessionId,
       "x-user-id": user?.id || ""
     }
   });
 
-  const { sessionId, isLoadingHistory, handleNewThread, handleThreadSelect } =
-    useSessionManager({ setMessages, reload });
-
-  // sessionIdが変更されたときにcurrentSessionIdを更新
-  useEffect(() => {
-    if (sessionId && sessionId !== currentSessionId) {
-      setCurrentSessionId(sessionId);
-    }
-  }, [sessionId, currentSessionId]);
+  const { isLoadingHistory, handleNewThread, handleThreadSelect } =
+    useThreadManager({
+      sessionId,
+      setMessages,
+      reload,
+      onSessionIdChange: updateSessionId
+    });
 
   // 画像アップロードフックを使用
   const {
