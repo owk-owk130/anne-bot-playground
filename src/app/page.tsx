@@ -78,7 +78,7 @@ export default function Chat() {
   // ローディング中の表示
   if (loading) {
     return (
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 items-center justify-center">
+      <div className="flex h-[100dvh] bg-gray-50 dark:bg-gray-900 items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-pink-500 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">読み込み中...</p>
@@ -88,7 +88,7 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-[100dvh] bg-gray-50 dark:bg-gray-900">
       {/* サイドバー */}
       <ThreadSidebar
         onNewThread={handleNewThread}
