@@ -10,7 +10,7 @@ interface Props {
   currentThreadId?: string;
 }
 
-const ThreadSidebar = ({
+export const ThreadSidebar = ({
   onNewThread,
   onThreadSelect,
   currentThreadId
@@ -470,5 +470,3 @@ const ThreadSidebar = ({
     </>
   );
 };
-
-export { ThreadSidebar };
