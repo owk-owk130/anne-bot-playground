@@ -21,20 +21,15 @@ const ThreadSidebar = ({
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
 
-  const fetchThreads = useCallback(async () => {
-    if (!user) {
-      setThreads([]);
-      return;
-    }
-    setIsLoadingThreads(true);
+  // スレッド一覧を取得するfetch関数
+  const fetchThreadsList = useCallback(async (userId: string) => {
     try {
-      const res = await fetch(`/api/threads?userId=${user.id}`);
+      const res = await fetch(`/api/threads?userId=${userId}`);
       if (!res.ok) {
-        setThreads([]);
-        return;
+        return [];
       }
       const { threads: userThreads } = await res.json();
-      const threadsWithDetails = (userThreads || []).map(
+      return (userThreads || []).map(
         (userThread: {
           thread_id: string;
           title: string | null;
@@ -48,13 +43,63 @@ const ThreadSidebar = ({
           updatedAt: userThread.updated_at
         })
       );
-      setThreads(threadsWithDetails);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // スレッドを削除するfetch関数
+  const deleteThreadApi = useCallback(
+    async (userId: string, threadId: string) => {
+      try {
+        const res = await fetch(
+          `/api/threads?userId=${userId}&threadId=${threadId}`,
+          {
+            method: "DELETE"
+          }
+        );
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    []
+  );
+
+  // チャット履歴を削除するfetch関数
+  const deleteChatHistory = useCallback(
+    async (sessionId: string, userId: string) => {
+      try {
+        const res = await fetch(
+          `/api/chat?sessionId=${sessionId}&userId=${userId}`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    []
+  );
+
+  const fetchThreads = useCallback(async () => {
+    if (!user) {
+      setThreads([]);
+      return;
+    }
+    setIsLoadingThreads(true);
+    try {
+      const threadsData = await fetchThreadsList(user.id);
+      setThreads(threadsData);
     } catch {
       setThreads([]);
     } finally {
       setIsLoadingThreads(false);
     }
-  }, [user]);
+  }, [user, fetchThreadsList]);
 
   useEffect(() => {
     fetchThreads();
@@ -87,22 +132,14 @@ const ThreadSidebar = ({
       if (!isConfirmed) return;
       setDeletingThreadId(threadId);
       try {
-        const res = await fetch(
-          `/api/threads?userId=${user.id}&threadId=${threadId}`,
-          {
-            method: "DELETE"
-          }
-        );
-        if (!res.ok) {
+        const deleteResult = await deleteThreadApi(user.id, threadId);
+        if (!deleteResult) {
           alert("スレッドの削除に失敗しました。");
           return;
         }
-        try {
-          await fetch(`/api/chat?sessionId=${threadId}&userId=${user.id}`, {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" }
-          });
-        } catch {}
+
+        await deleteChatHistory(threadId, user.id);
+
         if (currentThreadId === threadId) {
           onNewThread();
         }
@@ -113,7 +150,14 @@ const ThreadSidebar = ({
         setDeletingThreadId(null);
       }
     },
-    [user, currentThreadId, onNewThread, fetchThreads]
+    [
+      user,
+      currentThreadId,
+      onNewThread,
+      fetchThreads,
+      deleteThreadApi,
+      deleteChatHistory
+    ]
   );
 
   return (
@@ -427,4 +471,4 @@ const ThreadSidebar = ({
   );
 };
 
-export default ThreadSidebar;
+export { ThreadSidebar };
