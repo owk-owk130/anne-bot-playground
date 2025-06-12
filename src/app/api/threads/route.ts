@@ -36,6 +36,51 @@ export const GET = async (req: Request) => {
   });
 };
 
+export const POST = async (req: Request) => {
+  try {
+    const { userId, threadId, title } = await req.json();
+
+    if (!userId || !threadId) {
+      return new Response(
+        JSON.stringify({ error: "Missing required params" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        }
+      );
+    }
+
+    const { error } = await supabase.from("user_threads").upsert(
+      {
+        user_id: userId,
+        thread_id: threadId,
+        title: title || "New Thread",
+        updated_at: new Date().toISOString()
+      },
+      {
+        onConflict: "user_id,thread_id"
+      }
+    );
+
+    if (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+};
+
 export const DELETE = async (req: Request) => {
   const url = new URL(req.url);
   const userId = url.searchParams.get("userId");
