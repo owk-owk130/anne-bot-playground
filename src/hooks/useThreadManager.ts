@@ -51,7 +51,7 @@ export const useThreadManager = ({
 
   // スレッドを作成するfetch関数
   const createThreadApi = useCallback(
-    async (userId: string, threadId: string, title: string = "New Thread") => {
+    async (userId: string, threadId: string, title = "New Thread") => {
       try {
         const response = await fetch("/api/threads", {
           method: "POST",
@@ -105,22 +105,13 @@ export const useThreadManager = ({
 
     // 認証済みユーザーの場合はAPIでスレッド情報を保存
     if (user) {
-      try {
-        const response = await fetch("/api/threads", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.id,
-            threadId: newSessionId,
-            title: "New Thread"
-          })
-        });
-
-        if (!response.ok) {
-          console.error("Failed to create thread");
-        }
-      } catch (error) {
-        console.error("Error creating thread:", error);
+      const createResult = await createThreadApi(
+        user.id,
+        newSessionId,
+        "New Thread"
+      );
+      if (!createResult) {
+        console.error("Failed to create thread");
       }
     }
 
@@ -134,7 +125,7 @@ export const useThreadManager = ({
         reload();
       }, 100);
     }
-  }, [user, setMessages, reload, onSessionIdChange]);
+  }, [user, setMessages, reload, onSessionIdChange, createThreadApi]);
 
   // スレッド選択
   const handleThreadSelect = useCallback(
